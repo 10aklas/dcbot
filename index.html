@@ -37,7 +37,7 @@ load_dotenv()
 
 # Bot configuration
 BOT_PREFIX = os.getenv("BOT_PREFIX", "!")
-TOKEN = os.getenv("DISCORD_TOKEN")
+TOKEN = os.getenv("MTM2MDcwNDQ2ODU4ODY5NTYxMw.GAcs2K0L0IOHVN0QzpBVBf85GRUeV6T5A")
 
 # Create the data directory if it doesn't exist
 if not os.path.exists("data"):
@@ -2247,6 +2247,179 @@ class Information(commands.Cog):
         
         # Add each chunk as a field
         for i, chunk in enumerate(role_chunks):
-            embed.add_field(name=f"Roles (Part {i+</h1>
+            embed.add_field(name=f"Roles (Part {i+1})", value=chunk, inline=False)
+
+        return embed
+
+@bot.command()
+async def server(ctx):
+    """Display server information"""
+    server = ctx.guild
+    
+    # Get server information
+    created_at = server.created_at.strftime("%Y-%m-%d")
+    member_count = server.member_count
+    role_count = len(server.roles)
+    text_channels = len([c for c in server.channels if isinstance(c, discord.TextChannel)])
+    voice_channels = len([c for c in server.channels if isinstance(c, discord.VoiceChannel)])
+    
+    # Create embed
+    embed = discord.Embed(
+        title=f"{server.name} Information",
+        description=f"Server ID: {server.id}",
+        color=discord.Color.blue()
+    )
+    
+    # Add server icon if it exists
+    if server.icon:
+        embed.set_thumbnail(url=server.icon.url)
+    
+    # Add fields with server information
+    embed.add_field(name="Created On", value=created_at, inline=True)
+    embed.add_field(name="Members", value=str(member_count), inline=True)
+    embed.add_field(name="Roles", value=str(role_count), inline=True)
+    embed.add_field(name="Text Channels", value=str(text_channels), inline=True)
+    embed.add_field(name="Voice Channels", value=str(voice_channels), inline=True)
+    
+    # Add server owner
+    embed.add_field(name="Owner", value=server.owner.mention, inline=True)
+    
+    # Add footer
+    embed.set_footer(text=f"Requested by {ctx.author}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def userinfo(ctx, member: discord.Member = None):
+    """Display information about a user"""
+    # If no member is specified, use the command author
+    if member is None:
+        member = ctx.author
+    
+    # Get user information
+    joined_at = member.joined_at.strftime("%Y-%m-%d")
+    created_at = member.created_at.strftime("%Y-%m-%d")
+    
+    # Create embed
+    embed = discord.Embed(
+        title=f"{member.name} Information",
+        description=f"User ID: {member.id}",
+        color=member.color
+    )
+    
+    # Add user avatar if it exists
+    if member.avatar:
+        embed.set_thumbnail(url=member.avatar.url)
+    
+    # Add fields with user information
+    embed.add_field(name="Joined Server", value=joined_at, inline=True)
+    embed.add_field(name="Account Created", value=created_at, inline=True)
+    
+    # Add roles (excluding @everyone)
+    roles = [role.mention for role in member.roles if role.name != "@everyone"]
+    roles_text = ", ".join(roles) if roles else "No roles"
+    
+    # Check if roles text is too long
+    if len(roles_text) <= 1024:
+        embed.add_field(name="Roles", value=roles_text, inline=False)
+    else:
+        # Split roles into multiple fields if too long
+        chunks = []
+        current_chunk = ""
+        
+        for role in roles:
+            if len(current_chunk + role + ", ") > 1024:
+                chunks.append(current_chunk[:-2])  # Remove trailing ", "
+                current_chunk = role + ", "
+            else:
+                current_chunk += role + ", "
+        
+        if current_chunk:
+            chunks.append(current_chunk[:-2])  # Remove trailing ", "
+        
+        for i, chunk in enumerate(chunks):
+            embed.add_field(name=f"Roles (Part {i+1})", value=chunk, inline=False)
+    
+    # Add footer
+    embed.set_footer(text=f"Requested by {ctx.author}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def help(ctx):
+    """Display help information about the bot commands"""
+    embed = discord.Embed(
+        title="Bot Commands",
+        description="Here are the available commands:",
+        color=discord.Color.green()
+    )
+    
+    # Add command descriptions
+    embed.add_field(name="!ping", value="Check if the bot is responsive", inline=False)
+    embed.add_field(name="!server", value="Display information about the server", inline=False)
+    embed.add_field(name="!userinfo [member]", value="Display information about a user (or yourself if no user is specified)", inline=False)
+    embed.add_field(name="!roles", value="Display all roles in the server", inline=False)
+    embed.add_field(name="!purge [amount]", value="Delete a specified number of messages (default: 5)", inline=False)
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def purge(ctx, amount: int = 5):
+    """Delete a specified number of messages"""
+    if amount <= 0:
+        await ctx.send("Please specify a positive number of messages to delete.")
+        return
+    
+    if amount > 100:
+        await ctx.send("You can only delete up to 100 messages at once.")
+        return
+    
+    # Delete messages
+    deleted = await ctx.channel.purge(limit=amount + 1)  # +1 to include the command message
+    
+    # Send confirmation message
+    confirmation = await ctx.send(f"Deleted {len(deleted) - 1} messages.")
+    
+    # Delete confirmation message after 5 seconds
+    await asyncio.sleep(5)
+    await confirmation.delete()
+
+@bot.command()
+async def roles(ctx):
+    """Display all roles in the server"""
+    server = ctx.guild
+    
+    # Get all roles except @everyone
+    roles = [role for role in server.roles if role.name != "@everyone"]
+    
+    # Sort roles by position (highest first)
+    roles.sort(reverse=True, key=lambda x: x.position)
+    
+    embed = discord.Embed(
+        title=f"Roles in {server.name}",
+        description=f"Total: {len(roles)} roles",
+        color=discord.Color.gold()
+    )
+    
+    # Check if we need to split the roles into multiple fields
+    roles_text = ""
+    for role in roles:
+        role_text = f"{role.mention} ({len(role.members)} members)\n"
+        
+        # If adding this role would exceed the field limit, create a new field
+        if len(roles_text + role_text) > 1024:
+            embed.add_field(name="Roles", value=roles_text, inline=False)
+            roles_text = role_text
+        else:
+            roles_text += role_text
+    
+    # Add any remaining roles
+    if roles_text:
+        embed.add_field(name="Roles", value=roles_text, inline=False)
+    
+    await ctx.send(embed=embed)
+
+# Run the bot with token
+bot.run(TOKEN)</h1>
 </body>
 </html>
