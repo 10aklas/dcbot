@@ -6,2367 +6,2354 @@
     <title>Document</title>
 </head>
 <body>
-    <h1># DiscordBotPro - A Comprehensive Discord Bot with Free and Premium Features
-# Author: Claude
-# Date: April 18, 2025
-
-import discord
-from discord.ext import commands, tasks
+    <h1>import discord
+from discord.ext import commands
 import asyncio
-import aiohttp
-import random
+import datetime
 import json
 import os
-import datetime
-import logging
-import sqlite3
-import time
-import yaml
 import re
-import wavelink
-import motor.motor_asyncio
-import traceback
-import typing
-from dotenv import load_dotenv
-from PIL import Image, ImageDraw, ImageFont
-from io import BytesIO
+import random
+import time
+import logging
+import aiohttp
+import io
 import matplotlib.pyplot as plt
-import humanfriendly
-import psutil
-import itertools
-from typing import Optional, List, Dict, Union, Any
-from contextlib import contextmanager
-from collections import defaultdict, Counter, deque
-from functools import wraps
+from collections import defaultdict, Counter
+from typing import Optional, Union, List, Dict, Tuple
+from discord.ui import Button, View
 
-# Load environment variables
-load_dotenv()
-TOKEN = os.getenv('DISCORD_TOKEN')
-MONGODB_URI = os.getenv('MONGODB_URI')
-WAVELINK_URI = os.getenv('WAVELINK_URI')
-WAVELINK_PASSWORD = os.getenv('WAVELINK_PASSWORD')
-PREMIUM_BOT_KEY = os.getenv('PREMIUM_BOT_KEY')
-
-# Intents Setup
-intents = discord.Intents.all()
-
-# Logging Setup
+# Set up logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("discord_bot.log"),
+        logging.FileHandler("bot.log"),
         logging.StreamHandler()
     ]
 )
-logger = logging.getLogger('DiscordBotPro')
+logger = logging.getLogger("ModBot")
 
-# Initialize Bot
-bot = commands.Bot(command_prefix=commands.when_mentioned_or('!'), intents=intents, case_insensitive=True)
+# Bot configuration
+if not os.path.exists('config.json'):
+    with open('config.json', 'w') as f:
+        json.dump({
+            "token": "YOUR_BOT_TOKEN_HERE",
+            "prefix": "!",
+            "log_channel_id": None,
+            "mute_role_name": "Muted",
+            "auto_mod": {
+                "enabled": True,
+                "spam_threshold": 5,
+                "spam_interval": 5,
+                "max_mentions": 5,
+                "banned_words": [],
+                "banned_links": [],
+                "caps_percentage": 70,
+                "caps_min_length": 8,
+                "auto_actions": {
+                    "spam": "mute",
+                    "mass_mention": "mute",
+                    "banned_word": "warn",
+                    "banned_link": "warn",
+                    "excessive_caps": "warn",
+                    "raid_detection": "ban"
+                }
+            },
+            "verification": {
+                "enabled": False,
+                "role_id": None,
+                "channel_id": None,
+                "message": "Welcome! Please type `!verify` to gain access to the server."
+            },
+            "welcome": {
+                "enabled": False,
+                "channel_id": None,
+                "message": "Welcome {user} to {server}! You are member #{count}."
+            },
+            "goodbye": {
+                "enabled": False,
+                "channel_id": None,
+                "message": "Goodbye {user}! We hope to see you again."
+            },
+            "raid_protection": {
+                "enabled": True,
+                "join_rate_threshold": 5,
+                "join_rate_interval": 10,
+                "account_age_days": 7,
+                "lockdown_duration": 300
+            },
+            "backup": {
+                "enabled": True,
+                "interval_hours": 24
+            },
+            "auto_role": {
+                "enabled": False,
+                "role_ids": []
+            }
+        }, f, indent=4)
+    print("Config file created. Please add your bot token to config.json")
+    exit()
 
-# Constants
-EMBED_COLOR = 0x3498db
-ERROR_COLOR = 0xe74c3c
-SUCCESS_COLOR = 0x2ecc71
-WARNING_COLOR = 0xf1c40f
-INFO_COLOR = 0x3498db
-PREMIUM_COLOR = 0x9b59b6
+with open('config.json', 'r') as f:
+    config = json.load(f)
 
-# Database Setup
-class Database:
+# Setup bot with intents
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
+intents.presences = True
+intents.reactions = True
+
+bot = commands.Bot(command_prefix=config['prefix'], intents=intents, help_command=None)
+
+# Create necessary folders
+os.makedirs('data', exist_ok=True)
+os.makedirs('backups', exist_ok=True)
+os.makedirs('logs', exist_ok=True)
+
+# Database classes
+class DatabaseManager:
+    def __init__(self, filename):
+        self.filename = f"data/{filename}"
+        self.data = self._load_data()
+    
+    def _load_data(self):
+        if os.path.exists(self.filename):
+            with open(self.filename, 'r') as f:
+                return json.load(f)
+        return {}
+    
+    def _save_data(self):
+        with open(self.filename, 'w') as f:
+            json.dump(self.data, f, indent=4)
+
+class WarningManager(DatabaseManager):
     def __init__(self):
-        self.client = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URI)
-        self.db = self.client.discord_bot
-        self.users = self.db.users
-        self.guilds = self.db.guilds
-        self.economy = self.db.economy
-        self.leveling = self.db.leveling
-        self.music = self.db.music
-        self.tickets = self.db.tickets
-        self.moderation = self.db.moderation
-        self.premium = self.db.premium
-        self.stats = self.db.stats
-        logger.info("Connected to MongoDB")
+        super().__init__("warnings.json")
+    
+    def add_warning(self, guild_id, user_id, moderator_id, reason):
+        guild_id = str(guild_id)
+        user_id = str(user_id)
         
-    async def get_user(self, user_id: int):
-        return await self.users.find_one({"_id": user_id})
+        if guild_id not in self.data:
+            self.data[guild_id] = {}
+        
+        if user_id not in self.data[guild_id]:
+            self.data[guild_id][user_id] = []
+        
+        warning = {
+            "moderator_id": str(moderator_id),
+            "reason": reason,
+            "timestamp": datetime.datetime.utcnow().isoformat()
+        }
+        
+        self.data[guild_id][user_id].append(warning)
+        self._save_data()
+        return len(self.data[guild_id][user_id])
     
-    async def update_user(self, user_id: int, data: dict):
-        await self.users.update_one({"_id": user_id}, {"$set": data}, upsert=True)
+    def get_warnings(self, guild_id, user_id):
+        guild_id = str(guild_id)
+        user_id = str(user_id)
+        
+        if guild_id not in self.data:
+            return []
+        
+        if user_id not in self.data[guild_id]:
+            return []
+        
+        return self.data[guild_id][user_id]
     
-    async def get_guild(self, guild_id: int):
-        return await self.guilds.find_one({"_id": guild_id})
+    def clear_warnings(self, guild_id, user_id):
+        guild_id = str(guild_id)
+        user_id = str(user_id)
+        
+        if guild_id in self.data and user_id in self.data[guild_id]:
+            count = len(self.data[guild_id][user_id])
+            self.data[guild_id][user_id] = []
+            self._save_data()
+            return count
+        return 0
     
-    async def update_guild(self, guild_id: int, data: dict):
-        await self.guilds.update_one({"_id": guild_id}, {"$set": data}, upsert=True)
-    
-    async def get_economy(self, user_id: int):
-        return await self.economy.find_one({"_id": user_id})
-    
-    async def update_economy(self, user_id: int, data: dict):
-        await self.economy.update_one({"_id": user_id}, {"$set": data}, upsert=True)
-    
-    async def get_level(self, user_id: int, guild_id: int):
-        return await self.leveling.find_one({"user_id": user_id, "guild_id": guild_id})
-    
-    async def update_level(self, user_id: int, guild_id: int, data: dict):
-        await self.leveling.update_one(
-            {"user_id": user_id, "guild_id": guild_id},
-            {"$set": data},
-            upsert=True
-        )
-    
-    async def get_premium(self, guild_id: int):
-        return await self.premium.find_one({"_id": guild_id})
-    
-    async def update_premium(self, guild_id: int, data: dict):
-        await self.premium.update_one({"_id": guild_id}, {"$set": data}, upsert=True)
-    
-    async def is_premium(self, guild_id: int) -> bool:
-        data = await self.get_premium(guild_id)
-        if not data:
-            return False
-        return data.get("active", False) and data.get("expiry", 0) > time.time()
-    
-    async def get_ticket(self, ticket_id: str):
-        return await self.tickets.find_one({"_id": ticket_id})
-    
-    async def update_ticket(self, ticket_id: str, data: dict):
-        await self.tickets.update_one({"_id": ticket_id}, {"$set": data}, upsert=True)
-    
-    async def get_guild_tickets(self, guild_id: int):
-        return await self.tickets.find({"guild_id": guild_id}).to_list(length=100)
-    
-    async def get_moderation_case(self, case_id: int, guild_id: int):
-        return await self.moderation.find_one({"case_id": case_id, "guild_id": guild_id})
-    
-    async def create_moderation_case(self, case_data: dict):
-        await self.moderation.insert_one(case_data)
-    
-    async def get_user_cases(self, user_id: int, guild_id: int):
-        return await self.moderation.find({"user_id": user_id, "guild_id": guild_id}).to_list(length=100)
-    
-    async def increment_stats(self, stat_name: str, amount: int = 1):
-        await self.stats.update_one(
-            {"_id": "bot_stats"},
-            {"$inc": {stat_name: amount}},
-            upsert=True
-        )
-    
-    async def get_stats(self):
-        return await self.stats.find_one({"_id": "bot_stats"})
+    def remove_warning(self, guild_id, user_id, warning_index):
+        guild_id = str(guild_id)
+        user_id = str(user_id)
+        
+        if guild_id in self.data and user_id in self.data[guild_id]:
+            warnings_list = self.data[guild_id][user_id]
+            if 0 <= warning_index < len(warnings_list):
+                removed = warnings_list.pop(warning_index)
+                self._save_data()
+                return True, removed
+        return False, None
 
-# Initialize Database
-db = Database()
+class NoteManager(DatabaseManager):
+    def __init__(self):
+        super().__init__("notes.json")
+    
+    def add_note(self, guild_id, user_id, moderator_id, content):
+        guild_id = str(guild_id)
+        user_id = str(user_id)
+        
+        if guild_id not in self.data:
+            self.data[guild_id] = {}
+        
+        if user_id not in self.data[guild_id]:
+            self.data[guild_id][user_id] = []
+        
+        note = {
+            "moderator_id": str(moderator_id),
+            "content": content,
+            "timestamp": datetime.datetime.utcnow().isoformat()
+        }
+        
+        self.data[guild_id][user_id].append(note)
+        self._save_data()
+        return len(self.data[guild_id][user_id])
+    
+    def get_notes(self, guild_id, user_id):
+        guild_id = str(guild_id)
+        user_id = str(user_id)
+        
+        if guild_id not in self.data:
+            return []
+        
+        if user_id not in self.data[guild_id]:
+            return []
+        
+        return self.data[guild_id][user_id]
+    
+    def remove_note(self, guild_id, user_id, note_index):
+        guild_id = str(guild_id)
+        user_id = str(user_id)
+        
+        if guild_id in self.data and user_id in self.data[guild_id]:
+            notes_list = self.data[guild_id][user_id]
+            if 0 <= note_index < len(notes_list):
+                removed = notes_list.pop(note_index)
+                self._save_data()
+                return True, removed
+        return False, None
 
-# Premium Decorator
-def premium_only():
-    async def predicate(ctx):
-        is_premium = await db.is_premium(ctx.guild.id)
-        if not is_premium:
-            embed = discord.Embed(
-                title="⭐ Premium Feature",
-                description="This feature is only available to premium servers. Use `!premium` to learn more.",
-                color=PREMIUM_COLOR
-            )
-            await ctx.send(embed=embed)
-            return False
-        return True
-    return commands.check(predicate)
+class RoleMenu(DatabaseManager):
+    def __init__(self):
+        super().__init__("role_menus.json")
+    
+    def create_menu(self, guild_id, channel_id, message_id, title, description):
+        guild_id = str(guild_id)
+        
+        if guild_id not in self.data:
+            self.data[guild_id] = {}
+        
+        menu_id = str(message_id)
+        self.data[guild_id][menu_id] = {
+            "channel_id": channel_id,
+            "title": title,
+            "description": description,
+            "roles": {}
+        }
+        self._save_data()
+        return menu_id
+    
+    def add_role(self, guild_id, menu_id, emoji, role_id, description):
+        guild_id = str(guild_id)
+        menu_id = str(menu_id)
+        
+        if guild_id in self.data and menu_id in self.data[guild_id]:
+            self.data[guild_id][menu_id]["roles"][emoji] = {
+                "role_id": role_id,
+                "description": description
+            }
+            self._save_data()
+            return True
+        return False
+    
+    def get_menu(self, guild_id, menu_id):
+        guild_id = str(guild_id)
+        menu_id = str(menu_id)
+        
+        if guild_id in self.data and menu_id in self.data[guild_id]:
+            return self.data[guild_id][menu_id]
+        return None
+    
+    def get_menu_by_message(self, guild_id, message_id):
+        guild_id = str(guild_id)
+        message_id = str(message_id)
+        
+        if guild_id in self.data and message_id in self.data[guild_id]:
+            return self.data[guild_id][message_id]
+        return None
+    
+    def get_role_by_emoji(self, guild_id, menu_id, emoji):
+        guild_id = str(guild_id)
+        menu_id = str(menu_id)
+        
+        if guild_id in self.data and menu_id in self.data[guild_id]:
+            menu = self.data[guild_id][menu_id]
+            if emoji in menu["roles"]:
+                return menu["roles"][emoji]["role_id"]
+        return None
+    
+    def get_all_menus(self, guild_id):
+        guild_id = str(guild_id)
+        
+        if guild_id in self.data:
+            return self.data[guild_id]
+        return {}
 
-# Error Handler
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CommandNotFound):
-        return
+class TempbanManager(DatabaseManager):
+    def __init__(self):
+        super().__init__("tempbans.json")
     
-    if isinstance(error, commands.MissingRequiredArgument):
-        embed = discord.Embed(
-            title="❌ Missing Argument",
-            description=f"Command is missing a required argument: `{error.param.name}`",
-            color=ERROR_COLOR
-        )
-        await ctx.send(embed=embed)
-        return
+    def add_tempban(self, guild_id, user_id, moderator_id, reason, expiry_time):
+        guild_id = str(guild_id)
+        user_id = str(user_id)
+        
+        if guild_id not in self.data:
+            self.data[guild_id] = {}
+        
+        self.data[guild_id][user_id] = {
+            "moderator_id": str(moderator_id),
+            "reason": reason,
+            "expiry": expiry_time.timestamp() if isinstance(expiry_time, datetime.datetime) else expiry_time,
+            "timestamp": datetime.datetime.utcnow().isoformat()
+        }
+        self._save_data()
     
-    if isinstance(error, commands.BadArgument):
-        embed = discord.Embed(
-            title="❌ Invalid Argument",
-            description=str(error),
-            color=ERROR_COLOR
-        )
-        await ctx.send(embed=embed)
-        return
+    def get_tempban(self, guild_id, user_id):
+        guild_id = str(guild_id)
+        user_id = str(user_id)
+        
+        if guild_id in self.data and user_id in self.data[guild_id]:
+            return self.data[guild_id][user_id]
+        return None
     
-    if isinstance(error, commands.CheckFailure):
-        if "premium_only" in str(error):
-            # Already handled by the decorator
-            return
-        embed = discord.Embed(
-            title="❌ Permission Denied",
-            description="You don't have permission to use this command.",
-            color=ERROR_COLOR
-        )
-        await ctx.send(embed=embed)
-        return
+    def remove_tempban(self, guild_id, user_id):
+        guild_id = str(guild_id)
+        user_id = str(user_id)
+        
+        if guild_id in self.data and user_id in self.data[guild_id]:
+            ban_data = self.data[guild_id][user_id]
+            del self.data[guild_id][user_id]
+            self._save_data()
+            return ban_data
+        return None
     
-    if isinstance(error, commands.CommandOnCooldown):
-        embed = discord.Embed(
-            title="⏰ Cooldown",
-            description=f"This command is on cooldown. Try again in {error.retry_after:.2f} seconds.",
-            color=WARNING_COLOR
-        )
-        await ctx.send(embed=embed)
-        return
-    
-    # Log the error
-    logger.error(f"Command error in {ctx.command}: {error}")
-    logger.error(traceback.format_exc())
-    
-    # Notify user
-    embed = discord.Embed(
-        title="❌ Error",
-        description="An unexpected error occurred while running this command.",
-        color=ERROR_COLOR
-    )
-    await ctx.send(embed=embed)
+    def get_expired_bans(self):
+        expired_bans = []
+        current_time = datetime.datetime.utcnow().timestamp()
+        
+        for guild_id, guild_bans in self.data.items():
+            for user_id, ban_data in list(guild_bans.items()):
+                if current_time > ban_data["expiry"]:
+                    expired_bans.append((guild_id, user_id))
+        
+        return expired_bans
 
-# Bot Events
+class AutomodManager(DatabaseManager):
+    def __init__(self):
+        super().__init__("automod_cases.json")
+        self.message_counts = defaultdict(lambda: [])
+        self.user_mentions = defaultdict(lambda: [])
+    
+    def add_case(self, guild_id, user_id, case_type, action_taken, content=None):
+        guild_id = str(guild_id)
+        user_id = str(user_id)
+        
+        if guild_id not in self.data:
+            self.data[guild_id] = []
+        
+        case = {
+            "user_id": user_id,
+            "type": case_type,
+            "action": action_taken,
+            "content": content,
+            "timestamp": datetime.datetime.utcnow().isoformat()
+        }
+        
+        self.data[guild_id].append(case)
+        
+        # Keep only the last 1000 cases per guild
+        if len(self.data[guild_id]) > 1000:
+            self.data[guild_id] = self.data[guild_id][-1000:]
+        
+        self._save_data()
+    
+    def get_cases(self, guild_id, limit=100):
+        guild_id = str(guild_id)
+        
+        if guild_id in self.data:
+            return self.data[guild_id][-limit:]
+        return []
+    
+    def get_user_cases(self, guild_id, user_id, limit=10):
+        guild_id = str(guild_id)
+        user_id = str(user_id)
+        
+        if guild_id in self.data:
+            user_cases = [case for case in self.data[guild_id] if case["user_id"] == user_id]
+            return user_cases[-limit:]
+        return []
+    
+    def track_message(self, user_id, channel_id, message_id, timestamp):
+        key = f"{user_id}_{channel_id}"
+        self.message_counts[key].append((message_id, timestamp))
+        
+        # Clear old messages (older than 10 seconds)
+        current_time = time.time()
+        self.message_counts[key] = [(mid, ts) for mid, ts in self.message_counts[key] if current_time - ts < 10]
+        
+        return len(self.message_counts[key])
+    
+    def track_mentions(self, user_id, mentions_count, timestamp):
+        self.user_mentions[user_id].append((mentions_count, timestamp))
+        
+        # Clear old mentions (older than 30 seconds)
+        current_time = time.time()
+        self.user_mentions[user_id] = [(count, ts) for count, ts in self.user_mentions[user_id] if current_time - ts < 30]
+        
+        total_mentions = sum(count for count, _ in self.user_mentions[user_id])
+        return total_mentions
+
+class StatsManager(DatabaseManager):
+    def __init__(self):
+        super().__init__("stats.json")
+        self.active_users = defaultdict(lambda: defaultdict(int))
+        self.command_usage = defaultdict(int)
+        self.last_save = time.time()
+    
+    def log_command(self, command_name):
+        self.command_usage[command_name] += 1
+        
+        # Save every 10 minutes
+        if time.time() - self.last_save > 600:
+            self._update_stats()
+    
+    def log_user_activity(self, guild_id, user_id):
+        day_key = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+        self.active_users[str(guild_id)][day_key] = len(set(list(self.active_users[str(guild_id)].get(day_key, set())) + [str(user_id)]))
+        
+        # Save every 10 minutes
+        if time.time() - self.last_save > 600:
+            self._update_stats()
+    
+    def _update_stats(self):
+        if "commands" not in self.data:
+            self.data["commands"] = {}
+        
+        # Update command usage
+        for cmd, count in self.command_usage.items():
+            if cmd not in self.data["commands"]:
+                self.data["commands"][cmd] = 0
+            self.data["commands"][cmd] += count
+        
+        # Update active users
+        if "active_users" not in self.data:
+            self.data["active_users"] = {}
+        
+        for guild_id, days in self.active_users.items():
+            if guild_id not in self.data["active_users"]:
+                self.data["active_users"][guild_id] = {}
+            
+            for day, count in days.items():
+                self.data["active_users"][guild_id][day] = count
+        
+        # Reset temporary counters
+        self.command_usage = defaultdict(int)
+        self.active_users = defaultdict(lambda: defaultdict(int))
+        self.last_save = time.time()
+        
+        # Save to file
+        self._save_data()
+    
+    def get_command_stats(self, limit=10):
+        if "commands" not in self.data:
+            return {}
+        
+        # Sort commands by usage
+        sorted_commands = sorted(self.data["commands"].items(), key=lambda x: x[1], reverse=True)
+        return dict(sorted_commands[:limit])
+    
+    def get_active_users_stats(self, guild_id, days=7):
+        guild_id = str(guild_id)
+        
+        if "active_users" not in self.data or guild_id not in self.data["active_users"]:
+            return {}
+        
+        # Get stats for the last X days
+        end_date = datetime.datetime.utcnow()
+        start_date = end_date - datetime.timedelta(days=days)
+        
+        date_range = []
+        current_date = start_date
+        while current_date <= end_date:
+            date_range.append(current_date.strftime("%Y-%m-%d"))
+            current_date += datetime.timedelta(days=1)
+        
+        result = {}
+        for date_str in date_range:
+            result[date_str] = self.data["active_users"][guild_id].get(date_str, 0)
+        
+        return result
+
+class FilterManager(DatabaseManager):
+    def __init__(self):
+        super().__init__("filters.json")
+    
+    def add_word(self, guild_id, word, filter_type="banned_word"):
+        guild_id = str(guild_id)
+        
+        if guild_id not in self.data:
+            self.data[guild_id] = {"banned_words": [], "banned_links": []}
+        
+        if filter_type not in self.data[guild_id]:
+            self.data[guild_id][filter_type] = []
+        
+        if word not in self.data[guild_id][filter_type]:
+            self.data[guild_id][filter_type].append(word)
+            self._save_data()
+            return True
+        return False
+    
+    def remove_word(self, guild_id, word, filter_type="banned_word"):
+        guild_id = str(guild_id)
+        
+        if guild_id in self.data and filter_type in self.data[guild_id]:
+            if word in self.data[guild_id][filter_type]:
+                self.data[guild_id][filter_type].remove(word)
+                self._save_data()
+                return True
+        return False
+    
+    def get_words(self, guild_id, filter_type="banned_word"):
+        guild_id = str(guild_id)
+        
+        if guild_id in self.data and filter_type in self.data[guild_id]:
+            return self.data[guild_id][filter_type]
+        return []
+    
+    def check_message(self, guild_id, content):
+        guild_id = str(guild_id)
+        content_lower = content.lower()
+        
+        if guild_id not in self.data:
+            return None, None
+        
+        # Check banned words
+        for word in self.data[guild_id].get("banned_words", []):
+            pattern = r'\b' + re.escape(word.lower()) + r'\b'
+            if re.search(pattern, content_lower):
+                return "banned_word", word
+        
+        # Check banned links
+        for link in self.data[guild_id].get("banned_links", []):
+            if link.lower() in content_lower:
+                return "banned_link", link
+        
+        return None, None
+
+class LockdownManager(DatabaseManager):
+    def __init__(self):
+        super().__init__("lockdowns.json")
+    
+    def add_lockdown(self, guild_id, channel_id, original_overwrites, end_time=None):
+        guild_id = str(guild_id)
+        channel_id = str(channel_id)
+        
+        if guild_id not in self.data:
+            self.data[guild_id] = {}
+        
+        # Save the overwrites as a JSON serializable format
+        serializable_overwrites = {}
+        for role_id, overwrite in original_overwrites.items():
+            serializable_overwrites[str(role_id)] = {
+                "send_messages": overwrite.send_messages,
+                "send_messages_in_threads": overwrite.send_messages_in_threads,
+                "create_public_threads": overwrite.create_public_threads,
+                "create_private_threads": overwrite.create_private_threads
+            }
+        
+        self.data[guild_id][channel_id] = {
+            "overwrites": serializable_overwrites,
+            "end_time": end_time.timestamp() if end_time else None,
+            "timestamp": datetime.datetime.utcnow().isoformat()
+        }
+        self._save_data()
+    
+    def remove_lockdown(self, guild_id, channel_id):
+        guild_id = str(guild_id)
+        channel_id = str(channel_id)
+        
+        if guild_id in self.data and channel_id in self.data[guild_id]:
+            lockdown_data = self.data[guild_id][channel_id]
+            del self.data[guild_id][channel_id]
+            self._save_data()
+            return lockdown_data
+        return None
+    
+    def get_lockdown(self, guild_id, channel_id):
+        guild_id = str(guild_id)
+        channel_id = str(channel_id)
+        
+        if guild_id in self.data and channel_id in self.data[guild_id]:
+            return self.data[guild_id][channel_id]
+        return None
+    
+    def get_all_lockdowns(self, guild_id):
+        guild_id = str(guild_id)
+        
+        if guild_id in self.data:
+            return self.data[guild_id]
+        return {}
+    
+    def get_expired_lockdowns(self):
+        expired_lockdowns = []
+        current_time = datetime.datetime.utcnow().timestamp()
+        
+        for guild_id, channels in self.data.items():
+            for channel_id, lockdown_data in list(channels.items()):
+                if lockdown_data["end_time"] and current_time > lockdown_data["end_time"]:
+                    expired_lockdowns.append((guild_id, channel_id))
+        
+        return expired_lockdowns
+
+# Initialize database managers
+warning_manager = WarningManager()
+note_manager = NoteManager()
+role_menu_manager = RoleMenu()
+tempban_manager = TempbanManager()
+automod_manager = AutomodManager()
+stats_manager = StatsManager()
+filter_manager = FilterManager()
+lockdown_manager = LockdownManager()
+
+# Recent joins tracking for raid protection
+recent_joins = defaultdict(list)
+server_lockdowns = {}
+
+# Bot events
 @bot.event
 async def on_ready():
-    logger.info(f"Bot connected as {bot.user.name} ({bot.user.id})")
-    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="!help | Premium Bot"))
+    logger.info(f'Logged in as {bot.user.name} (ID: {bot.user.id})')
+    
+    # Set bot presence
+    await bot.change_presence(activity=discord.Activity(
+        type=discord.ActivityType.watching, 
+        name=f"{config['prefix']}help | Protecting {len(bot.guilds)} servers"
+    ))
     
     # Start background tasks
-    update_stats.start()
-    check_premium_status.start()
+    bot.loop.create_task(check_tempbans())
+    bot.loop.create_task(check_temporary_lockdowns())
     
-    # Connect to Wavelink nodes
-    try:
-        nodes = [
-            wavelink.Node(uri=WAVELINK_URI, password=WAVELINK_PASSWORD),
-        ]
-        await wavelink.Pool.connect(nodes=nodes, client=bot)
-        logger.info("Connected to Wavelink nodes")
-    except Exception as e:
-        logger.error(f"Failed to connect to Wavelink nodes: {e}")
+    if config["backup"]["enabled"]:
+        bot.loop.create_task(backup_data())
+    
+    # Log stats on startup
+    for guild in bot.guilds:
+        logger.info(f"Serving {guild.name} (ID: {guild.id}) with {guild.member_count} members")
 
-@bot.event
-async def on_wavelink_node_ready(node: wavelink.Node):
-    logger.info(f"Wavelink node {node.identifier} ready")
-
-@bot.event
-async def on_guild_join(guild):
-    logger.info(f"Bot joined guild: {guild.name} ({guild.id})")
-    
-    # Create default guild config
-    default_config = {
-        "welcome_channel": None,
-        "welcome_message": "Welcome {user} to {server}!",
-        "farewell_message": "Goodbye {user}, we'll miss you!",
-        "autorole": None,
-        "prefix": "!",
-        "moderation": {
-            "log_channel": None,
-            "mute_role": None
-        },
-        "join_date": datetime.datetime.utcnow(),
-        "premium_trial_used": False
-    }
-    
-    await db.update_guild(guild.id, default_config)
-    await db.increment_stats("guilds_joined")
-    
-    # Try to send welcome message to system channel
-    try:
-        if guild.system_channel:
-            embed = discord.Embed(
-                title=f"Thanks for adding {bot.user.name}!",
-                description=f"Hello {guild.name}! I'm a feature-rich Discord bot with moderation, economy, music, and more!\n\nUse `!help` to see all my commands.",
-                color=EMBED_COLOR
-            )
-            embed.add_field(name="🛡️ Setup", value="Start by using `!setup` to configure me", inline=False)
-            embed.add_field(name="⭐ Premium", value="Check out `!premium` to see exclusive features", inline=False)
-            embed.set_footer(text="Made with ❤️ by Claude")
-            await guild.system_channel.send(embed=embed)
-    except Exception as e:
-        logger.error(f"Failed to send welcome message to guild {guild.id}: {e}")
-
-@bot.event
-async def on_guild_remove(guild):
-    logger.info(f"Bot removed from guild: {guild.name} ({guild.id})")
-    await db.increment_stats("guilds_left")
-
-@bot.event
-async def on_message(message):
-    # Ignore messages from bots
-    if message.author.bot:
-        return
-    
-    # Process commands
-    await bot.process_commands(message)
-    
-    # Only process further for guild messages
-    if not message.guild:
-        return
-    
-    # XP System
-    await add_xp(message.author, message.guild)
-    
-    # AFK Check
-    await check_afk(message)
-    
-    # Auto-mod features can be added here
-
-# Background Tasks
-@tasks.loop(minutes=30)
-async def update_stats():
-    logger.info("Updating bot statistics")
-    stats = {
-        "guilds": len(bot.guilds),
-        "users": len(bot.users),
-        "commands_run": bot.command_count if hasattr(bot, "command_count") else 0,
-        "last_updated": datetime.datetime.utcnow()
-    }
-    await db.update_stats(stats)
-
-@tasks.loop(hours=12)
-async def check_premium_status():
-    logger.info("Checking premium status of guilds")
-    async for premium_data in db.premium.find({"active": True}):
-        guild_id = premium_data["_id"]
-        expiry = premium_data.get("expiry", 0)
+async def check_tempbans():
+    """Background task to check for expired temporary bans"""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        expired_bans = tempban_manager.get_expired_bans()
         
-        if expiry < time.time():
-            # Premium expired
-            await db.update_premium(guild_id, {"active": False})
-            logger.info(f"Premium expired for guild {guild_id}")
+        for guild_id, user_id in expired_bans:
+            guild = bot.get_guild(int(guild_id))
+            if not guild:
+                continue
             
-            guild = bot.get_guild(guild_id)
-            if guild and guild.system_channel:
-                embed = discord.Embed(
-                    title="⭐ Premium Expired",
-                    description="Your server's premium subscription has expired. Renew with `!premium renew` to continue enjoying premium features!",
-                    color=WARNING_COLOR
+            ban_data = tempban_manager.remove_tempban(guild_id, user_id)
+            
+            try:
+                # Unban the user
+                user = await bot.fetch_user(int(user_id))
+                await guild.unban(user, reason="Temporary ban expired")
+                
+                # Log the action
+                await log_action(
+                    guild=guild,
+                    action="Unban (Auto)",
+                    user=user,
+                    moderator=guild.me,
+                    reason="Temporary ban expired"
                 )
-                try:
-                    await guild.system_channel.send(embed=embed)
-                except Exception as e:
-                    logger.error(f"Failed to send premium expiry message to guild {guild_id}: {e}")
+                
+                logger.info(f"Auto-unbanned user {user.name}#{user.discriminator} ({user.id}) from {guild.name}")
+            except discord.NotFound:
+                logger.warning(f"Could not find user {user_id} to unban from {guild.name}")
+            except discord.Forbidden:
+                logger.warning(f"No permission to unban {user_id} from {guild.name}")
+        
+        await asyncio.sleep(60)  # Check every minute
 
-# Utility Functions
-async def add_xp(user, guild, amount=None):
-    if amount is None:
-        amount = random.randint(5, 15)
-    
-    user_level_data = await db.get_level(user.id, guild.id)
-    
-    if not user_level_data:
-        user_level_data = {
-            "user_id": user.id,
-            "guild_id": guild.id,
-            "xp": amount,
-            "level": 0,
-            "last_message": time.time()
-        }
-    else:
-        # Check if user can earn XP (cooldown of 60 seconds)
-        if time.time() - user_level_data.get("last_message", 0) < 60:
-            return
+async def check_temporary_lockdowns():
+    """Background task to check for expired temporary channel lockdowns"""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        expired_lockdowns = lockdown_manager.get_expired_lockdowns()
         
-        user_level_data["xp"] += amount
-        user_level_data["last_message"] = time.time()
-    
-    # Calculate level
-    current_level = user_level_data["level"]
-    new_level = int(0.1 * (user_level_data["xp"] ** 0.5))
-    
-    user_level_data["level"] = new_level
-    await db.update_level(user.id, guild.id, user_level_data)
-    
-    # Level up message
-    if new_level > current_level:
-        guild_data = await db.get_guild(guild.id)
-        level_channel_id = guild_data.get("level_channel") if guild_data else None
-        
-        if level_channel_id:
-            channel = bot.get_channel(level_channel_id)
-            if channel:
+        for guild_id, channel_id in expired_lockdowns:
+            guild = bot.get_guild(int(guild_id))
+            if not guild:
+                continue
+            
+            channel = guild.get_channel(int(channel_id))
+            if not channel:
+                continue
+            
+            lockdown_data = lockdown_manager.remove_lockdown(guild_id, channel_id)
+            
+            try:
+                # Restore channel permissions
+                for role_id, overwrite_data in lockdown_data["overwrites"].items():
+                    role = guild.get_role(int(role_id))
+                    if role:
+                        overwrites = channel.overwrites_for(role)
+                        overwrites.update(
+                            send_messages=overwrite_data["send_messages"],
+                            send_messages_in_threads=overwrite_data["send_messages_in_threads"],
+                            create_public_threads=overwrite_data["create_public_threads"],
+                            create_private_threads=overwrite_data["create_private_threads"]
+                        )
+                        await channel.set_permissions(role, overwrite=overwrites)
+                
+                # Log the action
                 embed = discord.Embed(
-                    title="🎉 Level Up!",
-                    description=f"{user.mention} has reached level **{new_level}**!",
-                    color=SUCCESS_COLOR
+                    title="Channel Unlocked",
+                    description=f"{channel.mention} has been automatically unlocked.",
+                    color=discord.Color.green(),
+                    timestamp=datetime.datetime.utcnow()
                 )
                 await channel.send(embed=embed)
-
-async def check_afk(message):
-    # Check if the author is AFK
-    author_data = await db.get_user(message.author.id)
-    if author_data and author_data.get("afk"):
-        await db.update_user(message.author.id, {"afk": None})
-        try:
-            await message.channel.send(f"Welcome back {message.author.mention}! Your AFK status has been removed.")
-        except:
-            pass
-    
-    # Check for mentioned users who are AFK
-    for mention in message.mentions:
-        user_data = await db.get_user(mention.id)
-        if user_data and user_data.get("afk"):
-            afk_time = user_data["afk"]["time"]
-            afk_reason = user_data["afk"]["reason"]
-            time_ago = humanfriendly.format_timespan(time.time() - afk_time)
-            
-            embed = discord.Embed(
-                title="⚠️ User is AFK",
-                description=f"{mention.display_name} is AFK: {afk_reason} - {time_ago} ago",
-                color=WARNING_COLOR
-            )
-            await message.channel.send(embed=embed)
-
-def generate_level_image(user, level_data):
-    # This would create a fancy level card image
-    # For brevity, I'll just outline the logic
-    background = Image.new('RGBA', (500, 150), (44, 47, 51, 255))
-    draw = ImageDraw.Draw(background)
-    
-    # Draw user avatar
-    # Draw XP bar
-    # Draw level text
-    # Add username
-    
-    buffer = BytesIO()
-    background.save(buffer, format='PNG')
-    buffer.seek(0)
-    return buffer
-
-# Help Command
-bot.remove_command('help')  # Remove default help command
-
-@bot.group(invoke_without_command=True)
-async def help(ctx, command=None):
-    """Shows help about the bot, a command, or a category"""
-    if command is None:
-        embed = discord.Embed(
-            title=f"{bot.user.name} Help",
-            description="Here are all the available command categories:",
-            color=EMBED_COLOR
-        )
-        
-        # List all cogs/categories
-        categories = {
-            "⚙️ General": ["help", "ping", "info", "invite", "setup"],
-            "🔨 Moderation": ["ban", "kick", "mute", "warn", "infractions"],
-            "💰 Economy": ["balance", "daily", "work", "shop", "inventory"],
-            "🎵 Music": ["play", "skip", "queue", "now", "volume"],
-            "📊 Leveling": ["rank", "leaderboard", "rewards"],
-            "🎫 Tickets": ["ticket", "close", "transcript"],
-            "⭐ Premium": ["premium", "perks", "redeem"]
-        }
-        
-        for category, commands in categories.items():
-            embed.add_field(
-                name=category,
-                value=f"`!help {category.split(' ')[1].lower()}`",
-                inline=True
-            )
-            
-        embed.set_footer(text="Use !help <command> to get more info on a specific command")
-        await ctx.send(embed=embed)
-    else:
-        cmd = bot.get_command(command)
-        if cmd:
-            embed = discord.Embed(
-                title=f"Command: {cmd.name}",
-                description=cmd.help or "No description available",
-                color=EMBED_COLOR
-            )
-            
-            # Add usage, aliases, etc.
-            if cmd.usage:
-                embed.add_field(name="Usage", value=f"`!{cmd.name} {cmd.usage}`", inline=False)
-            else:
-                embed.add_field(name="Usage", value=f"`!{cmd.name}`", inline=False)
                 
-            if cmd.aliases:
-                embed.add_field(name="Aliases", value=", ".join([f"`{alias}`" for alias in cmd.aliases]), inline=False)
-                
-            await ctx.send(embed=embed)
-        else:
-            # Check if it's a category
-            category = command.capitalize()
-            if category in ["General", "Moderation", "Economy", "Music", "Leveling", "Tickets", "Premium"]:
-                embed = discord.Embed(
-                    title=f"{category} Commands",
-                    description=f"Here are the {category.lower()} commands:",
-                    color=EMBED_COLOR
+                # Log to mod channel
+                await log_action(
+                    guild=guild,
+                    action="Unlock (Auto)",
+                    channel=channel,
+                    moderator=guild.me,
+                    reason="Temporary lockdown expired"
                 )
                 
-                # This is simplified - you'd need to filter commands by category
-                commands_in_category = []
-                for cmd in bot.commands:
-                    if hasattr(cmd, "category") and cmd.category.lower() == category.lower():
-                        commands_in_category.append(cmd)
-                
-                if commands_in_category:
-                    for cmd in commands_in_category:
-                        embed.add_field(
-                            name=cmd.name,
-                            value=cmd.help or "No description",
-                            inline=False
-                        )
-                else:
-                    embed.description = "No commands found in this category."
-                
-                await ctx.send(embed=embed)
-            else:
-                embed = discord.Embed(
-                    title="Command Not Found",
-                    description=f"Command or category `{command}` not found.\nUse `!help` to see all commands.",
-                    color=ERROR_COLOR
-                )
-                await ctx.send(embed=embed)
-
-# General Commands
-@bot.command()
-async def ping(ctx):
-    """Check the bot's latency"""
-    start_time = time.time()
-    message = await ctx.send("Pinging...")
-    end_time = time.time()
-    
-    api_latency = round(bot.latency * 1000)
-    response_time = round((end_time - start_time) * 1000)
-    
-    embed = discord.Embed(title="🏓 Pong!", color=EMBED_COLOR)
-    embed.add_field(name="API Latency", value=f"{api_latency}ms", inline=True)
-    embed.add_field(name="Response Time", value=f"{response_time}ms", inline=True)
-    
-    await message.edit(content=None, embed=embed)
-    await db.increment_stats("commands_used")
-
-@bot.command()
-async def info(ctx):
-    """Display information about the bot"""
-    embed = discord.Embed(
-        title=f"{bot.user.name} Information",
-        description="A professional Discord bot with moderation, economy, music, and more!",
-        color=EMBED_COLOR
-    )
-    
-    # Bot stats
-    total_users = sum(guild.member_count for guild in bot.guilds)
-    embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
-    embed.add_field(name="Users", value=str(total_users), inline=True)
-    embed.add_field(name="Commands", value=str(len(bot.commands)), inline=True)
-    
-    # System stats
-    uptime = datetime.datetime.utcnow() - bot.uptime if hasattr(bot, "uptime") else "Unknown"
-    cpu_usage = psutil.cpu_percent()
-    mem = psutil.virtual_memory()
-    mem_usage = mem.percent
-    
-    embed.add_field(name="Uptime", value=str(uptime).split('.')[0], inline=True)
-    embed.add_field(name="CPU Usage", value=f"{cpu_usage}%", inline=True)
-    embed.add_field(name="Memory Usage", value=f"{mem_usage}%", inline=True)
-    
-    embed.add_field(name="Creator", value="Made with ❤️ by Claude", inline=False)
-    embed.add_field(name="Premium", value="Use `!premium` to check out premium features!", inline=False)
-    
-    embed.set_footer(text="Thank you for using our bot!")
-    embed.set_thumbnail(url=bot.user.avatar.url)
-    
-    await ctx.send(embed=embed)
-    await db.increment_stats("commands_used")
-
-@bot.command()
-async def invite(ctx):
-    """Get an invite link for the bot"""
-    permissions = discord.Permissions(
-        administrator=False,
-        manage_roles=True,
-        manage_channels=True,
-        kick_members=True,
-        ban_members=True,
-        manage_messages=True,
-        read_messages=True,
-        send_messages=True,
-        embed_links=True,
-        attach_files=True,
-        read_message_history=True,
-        add_reactions=True,
-        connect=True,
-        speak=True
-    )
-    
-    invite_url = discord.utils.oauth_url(bot.user.id, permissions=permissions)
-    
-    embed = discord.Embed(
-        title="📨 Invite Me",
-        description=f"[Click here to invite me to your server]({invite_url})",
-        color=EMBED_COLOR
-    )
-    embed.add_field(name="⭐ Premium", value="Use `!premium` to check out premium features!", inline=False)
-    
-    await ctx.send(embed=embed)
-    await db.increment_stats("commands_used")
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def setup(ctx):
-    """Interactive setup for the bot"""
-    embed = discord.Embed(
-        title="🛠️ Bot Setup",
-        description="Let's set up the bot for your server! Please choose an option below:",
-        color=EMBED_COLOR
-    )
-    
-    embed.add_field(
-        name="Categories",
-        value="1️⃣ Welcome System\n2️⃣ Moderation\n3️⃣ Leveling\n4️⃣ Economy\n5️⃣ Tickets\n❌ Cancel Setup",
-        inline=False
-    )
-    
-    setup_msg = await ctx.send(embed=embed)
-    options = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "❌"]
-    
-    for option in options:
-        await setup_msg.add_reaction(option)
-    
-    try:
-        reaction, user = await bot.wait_for(
-            "reaction_add",
-            check=lambda r, u: u == ctx.author and str(r.emoji) in options and r.message.id == setup_msg.id,
-            timeout=60.0
-        )
+                logger.info(f"Auto-unlocked channel {channel.name} in {guild.name}")
+            except discord.Forbidden:
+                logger.warning(f"No permission to unlock channel {channel.name} in {guild.name}")
         
-        await setup_msg.delete()
-        
-        if str(reaction.emoji) == "❌":
-            await ctx.send("Setup cancelled.")
-            return
-        
-        if str(reaction.emoji) == "1️⃣":
-            await welcome_setup(ctx)
-        elif str(reaction.emoji) == "2️⃣":
-            await moderation_setup(ctx)
-        elif str(reaction.emoji) == "3️⃣":
-            await leveling_setup(ctx)
-        elif str(reaction.emoji) == "4️⃣":
-            await economy_setup(ctx)
-        elif str(reaction.emoji) == "5️⃣":
-            await tickets_setup(ctx)
-            
-    except asyncio.TimeoutError:
-        await ctx.send("Setup timed out. Please run the command again if you want to set up the bot.")
-
-async def welcome_setup(ctx):
-    embed = discord.Embed(
-        title="👋 Welcome Setup",
-        description="Please mention the channel where welcome messages should be sent.",
-        color=EMBED_COLOR
-    )
-    await ctx.send(embed=embed)
-    
-    try:
-        msg = await bot.wait_for(
-            "message",
-            check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-            timeout=60.0
-        )
-        
-        if not msg.channel_mentions:
-            await ctx.send("❌ No channel mentioned. Setup cancelled.")
-            return
-        
-        welcome_channel = msg.channel_mentions[0].id
-        
-        embed = discord.Embed(
-            title="Welcome Message",
-            description="Please enter the welcome message. You can use these placeholders:\n"
-                        "{user} - Mentions the user\n"
-                        "{server} - Server name\n"
-                        "{count} - Member count",
-            color=EMBED_COLOR
-        )
-        await ctx.send(embed=embed)
-        
-        msg = await bot.wait_for(
-            "message",
-            check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-            timeout=120.0
-        )
-        
-        welcome_message = msg.content
-        
-        # Update guild settings
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        guild_data["welcome_channel"] = welcome_channel
-        guild_data["welcome_message"] = welcome_message
-        
-        await db.update_guild(ctx.guild.id, guild_data)
-        
-        embed = discord.Embed(
-            title="✅ Welcome System Configured",
-            description=f"Welcome channel set to <#{welcome_channel}>\nWelcome message set!",
-            color=SUCCESS_COLOR
-        )
-        await ctx.send(embed=embed)
-        
-    except asyncio.TimeoutError:
-        await ctx.send("Setup timed out. Please run the command again if you want to set up the welcome system.")
-
-async def moderation_setup(ctx):
-    embed = discord.Embed(
-        title="🛡️ Moderation Setup",
-        description="Please mention the channel where moderation logs should be sent.",
-        color=EMBED_COLOR
-    )
-    await ctx.send(embed=embed)
-    
-    try:
-        msg = await bot.wait_for(
-            "message",
-            check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-            timeout=60.0
-        )
-        
-        if not msg.channel_mentions:
-            await ctx.send("❌ No channel mentioned. Setup cancelled.")
-            return
-        
-        log_channel = msg.channel_mentions[0].id
-        
-        embed = discord.Embed(
-            title="Mute Role",
-            description="Please mention the role to use for mutes, or type 'create' to create a new one.",
-            color=EMBED_COLOR
-        )
-        await ctx.send(embed=embed)
-        
-        msg = await bot.wait_for(
-            "message",
-            check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-            timeout=60.0
-        )
-        
-        if msg.content.lower() == "create":
-            # Create mute role
-            mute_role = await ctx.guild.create_role(name="Muted", reason="Automatically created by bot setup")
-            
-            # Update channel permissions
-            for channel in ctx.guild.channels:
-                try:
-                    await channel.set_permissions(mute_role, send_messages=False, add_reactions=False)
-                except:
-                    pass
-            
-            mute_role_id = mute_role.id
-        elif msg.role_mentions:
-            mute_role_id = msg.role_mentions[0].id
-        else:
-            await ctx.send("❌ No role mentioned or 'create' specified. Using default settings.")
-            mute_role_id = None
-        
-        # Update guild settings
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        if "moderation" not in guild_data:
-            guild_data["moderation"] = {}
-            
-        guild_data["moderation"]["log_channel"] = log_channel
-        guild_data["moderation"]["mute_role"] = mute_role_id
-        
-        await db.update_guild(ctx.guild.id, guild_data)
-        
-        embed = discord.Embed(
-            title="✅ Moderation System Configured",
-            description=f"Log channel set to <#{log_channel}>\n" +
-                        (f"Mute role set to <@&{mute_role_id}>" if mute_role_id else "No mute role set."),
-            color=SUCCESS_COLOR
-        )
-        await ctx.send(embed=embed)
-        
-    except asyncio.TimeoutError:
-        await ctx.send("Setup timed out. Please run the command again if you want to set up the moderation system.")
-
-async def leveling_setup(ctx):
-    embed = discord.Embed(
-        title="📊 Leveling Setup",
-        description="Please mention the channel where level-up announcements should be sent, or type 'none' for no announcements.",
-        color=EMBED_COLOR
-    )
-    await ctx.send(embed=embed)
-    
-    try:
-        msg = await bot.wait_for(
-            "message",
-            check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-            timeout=60.0
-        )
-        
-        if msg.content.lower() == "none":
-            level_channel = None
-        elif msg.channel_mentions:
-            level_channel = msg.channel_mentions[0].id
-        else:
-            await ctx.send("❌ No valid channel mentioned. Disabling level-up announcements.")
-            level_channel = None
-        
-        # Ask about role rewards
-        embed = discord.Embed(
-            title="Role Rewards",
-            description="Would you like to set up automatic role rewards for levels? (yes/no)",
-            color=EMBED_COLOR
-        )
-        await ctx.send(embed=embed)
-        
-        msg = await bot.wait_for(
-            "message",
-            check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-            timeout=60.0
-        )
-        
-        role_rewards = {}
-        if msg.content.lower() in ("yes", "y"):
-            embed = discord.Embed(
-                title="Role Rewards Setup",
-                description="Please enter up to 5 level-role pairs in the format: `level: @role`\n"
-                            "For example: `5: @Level 5`\n"
-                            "Type 'done' when finished.",
-                color=EMBED_COLOR
-            )
-            await ctx.send(embed=embed)
-            
-            for _ in range(5):  # Maximum 5 role rewards
-                msg = await bot.wait_for(
-                    "message",
-                    check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-                    timeout=60.0
-                )
-                
-                if msg.content.lower() == "done":
-                    break
+        # Check for server-wide lockdowns that need to be lifted
+        current_time = time.time()
+        for guild_id, data in list(server_lockdowns.items()):
+            if current_time > data["end_time"]:
+                guild = bot.get_guild(int(guild_id))
+                if not guild:
+                    continue
                 
                 try:
-                    level_part, role_part = msg.content.split(":", 1)
-                    level = int(level_part.strip())
+                    # Re-enable member verification
+                    verification_level = data["previous_verification"]
+                    await guild.edit(verification_level=verification_level)
                     
-                    if msg.role_mentions:
-                        role_id = msg.role_mentions[0].id
-                        role_rewards[str(level)] = role_id
-                        await ctx.send(f"✅ Added role reward for level {level}.")
-                    else:
-                        await ctx.send("❌ No role mentioned. Skipping this entry.")
-                except:
-                    await ctx.send("❌ Invalid format. Please use the format: `level: @role`")
+                    # Log the action
+                    await log_action(
+                        guild=guild,
+                        action="Server Unlock (Auto)",
+                        moderator=guild.me,
+                        reason="Temporary server lockdown expired"
+                    )
+                    
+                    del server_lockdowns[guild_id]
+                    logger.info(f"Auto-unlocked server {guild.name}")
+                except discord.Forbidden:
+                    logger.warning(f"No permission to unlock server {guild.name}")
         
-        # Update guild settings
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        guild_data["level_channel"] = level_channel
-        guild_data["role_rewards"] = role_rewards
-        
-        await db.update_guild(ctx.guild.id, guild_data)
-        
-        embed = discord.Embed(
-            title="✅ Leveling System Configured",
-            description=(f"Level-up announcement channel: <#{level_channel}>" if level_channel else "Level-up announcements disabled") +
-                        f"\nRole rewards: {len(role_rewards)} configured",
-            color=SUCCESS_COLOR
-        )
-        await ctx.send(embed=embed)
-        
-    except asyncio.TimeoutError:
-        await ctx.send("Setup timed out. Please run the command again if you want to set up the leveling system.")
+        await asyncio.sleep(60)  # Check every minute
 
-async def economy_setup(ctx):
-    embed = discord.Embed(
-        title="💰 Economy Setup",
-        description="Do you want to enable the economy system for your server? (yes/no)",
-        color=EMBED_COLOR
-    )
-    await ctx.send(embed=embed)
+async def backup_data():
+    """Background task to backup database files"""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        backup_time = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        backup_dir = f"backups/{backup_time}"
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        # Copy all data files to backup directory
+        for file in os.listdir("data"):
+            if file.endswith(".json"):
+                source_path = f"data/{file}"
+                target_path = f"{backup_dir}/{file}"
+                with open(source_path, "r") as source:
+                    with open(target_path, "w") as target:
+                        target.write(source.read())
+        
+        # Keep only the last 30 backups
+        backups = sorted(os.listdir("backups"))
+        if len(backups) > 30:
+            for old_backup in backups[:-30]:
+                import shutil
+                shutil.rmtree(f"backups/{old_backup}")
+        
+        logger.info(f"Backup created: {backup_time}")
+        
+        # Sleep for the configured interval
+        await asyncio.sleep(config["backup"]["interval_hours"] * 3600)
+
+# Helper functions
+async def log_action(guild, action, user=None, moderator=None, reason=None, duration=None, channel=None, evidence=None):
+    """Log moderation actions to the configured log channel"""
+    if not config.get('log_channel_id'):
+        return
     
-    try:
-        msg = await bot.wait_for(
-            "message",
-            check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-            timeout=60.0
-        )
-        
-        if msg.content.lower() not in ("yes", "y"):
-            await ctx.send("Economy system setup cancelled.")
-            return
-        
-        # Currency name
-        embed = discord.Embed(
-            title="Currency Name",
-            description="What would you like to call your server's currency?",
-            color=EMBED_COLOR
-        )
-        await ctx.send(embed=embed)
-        
-        msg = await bot.wait_for(
-            "message",
-            check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-            timeout=60.0
-        )
-        
-        currency_name = msg.content.strip()
-        
-        # Starting balance
-        embed = discord.Embed(
-            title="Starting Balance",
-            description="How much currency should new users start with?",
-            color=EMBED_COLOR
-        )
-        await ctx.send(embed=embed)
-        
-        msg = await bot.wait_for(
-            "message",
-            check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-            timeout=60.0
-        )
-        
-        try:
-            starting_balance = int(msg.content.strip())
-        except:
-            await ctx.send("❌ Invalid number. Setting starting balance to 100.")
-            starting_balance = 100
-        
-        # Update guild settings
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        guild_data["economy"] = {
-            "enabled": True,
-            "currency_name": currency_name,
-            "starting_balance": starting_balance,
-            "currency_symbol": currency_name[0] if currency_name else "$"
-        }
-        
-        await db.update_guild(ctx.guild.id, guild_data)
-        
-        embed = discord.Embed(
-            title="✅ Economy System Configured",
-            description=f"Economy system enabled!\nCurrency: {currency_name}\nStarting Balance: {starting_balance}",
-            color=SUCCESS_COLOR
-        )
-        await ctx.send(embed=embed)
-        
-    except asyncio.TimeoutError:
-        await ctx.send("Setup timed out. Please run the command again if you want to set up the economy system.")
-
-async def tickets_setup(ctx):
-    embed = discord.Embed(
-        title="🎫 Ticket System Setup",
-        description="Please mention the channel where the ticket panel should be sent.",
-        color=EMBED_COLOR
-    )
-    await ctx.send(embed=embed)
+    log_channel = guild.get_channel(int(config['log_channel_id']))
+    if not log_channel:
+        return
     
-    try:
-        msg = await bot.wait_for(
-            "message",
-            check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-            timeout=60.0
-        )
-        
-        if not msg.channel_mentions:
-            await ctx.send("❌ No channel mentioned. Setup cancelled.")
-            return
-        
-        ticket_channel = msg.channel_mentions[0]
-        
-        # Support roles
-        embed = discord.Embed(
-            title="Support Roles",
-            description="Please mention the roles that should have access to tickets, separated by spaces.",
-            color=EMBED_COLOR
-        )
-        await ctx.send(embed=embed)
-        
-        msg = await bot.wait_for(
-            "message",
-            check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-            timeout=60.0
-        )
-        
-        support_roles = [role.id for role in msg.role_mentions]
-        
-        # Ticket panel message
-        embed = discord.Embed(
-            title="Ticket Panel Message",
-            description="Please enter the message that should appear on the ticket panel.",
-            color=EMBED_COLOR
-        )
-        await ctx.send(embed=embed)
-        
-        msg = await bot.wait_for(
-            "message",
-            check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-            timeout=120.0
-        )
-        
-        panel_message = msg.content
-        
-        # Create ticket panel
-        ticket_embed = discord.Embed(
-            title="🎫 Support Tickets",
-            description=panel_message,
-            color=EMBED_COLOR
-        )
-        ticket_embed.set_footer(text="Click the button below to create a ticket")
-        
-        # Create ticket button
-        ticket_view = discord.ui.View(timeout=None)
-        ticket_button = discord.ui.Button(label="Create Ticket", style=discord.ButtonStyle.primary, emoji="🎫", custom_id="create_ticket")
-        ticket_view.add_item(ticket_button)
-        
-        panel_message = await ticket_channel.send(embed=ticket_embed, view=ticket_view)
-        
-        # Update guild settings
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        guild_data["tickets"] = {
-            "enabled": True,
-            "panel_channel": ticket_channel.id,
-            "panel_message": panel_message.id,
-            "support_roles": support_roles,
-            "category": None  # Will be created when first ticket is opened
-        }
-        
-        await db.update_guild(ctx.guild.id, guild_data)
-        
-        embed = discord.Embed(
-            title="✅ Ticket System Configured",
-            description=f"Ticket system enabled!\nPanel sent to {ticket_channel.mention}\nSupport roles: {len(support_roles)}",
-            color=SUCCESS_COLOR
-        )
-        await ctx.send(embed=embed)
-        
-    except asyncio.TimeoutError:
-        await ctx.send("Setup timed out. Please run the command again if you want to set up the ticket system.")
+    embed = discord.Embed(
+        title=f"Moderation Action: {action}",
+        color=discord.Color.blue(),
+        timestamp=datetime.datetime.utcnow()
+    )
+    
+    if user:
+        embed.add_field(name="User", value=f"{user.mention} ({user.name}#{user.discriminator if hasattr(user, 'discriminator') else '0'})", inline=True)
+    
+    if channel:
+        embed.add_field(name="Channel", value=f"{channel.mention} ({channel.name})", inline=True)
+    
+    if moderator:
+        embed.add_field(name="Moderator", value=f"{moderator.mention} ({moderator.name}#{moderator.discriminator if hasattr(moderator, 'discriminator') else '0'})", inline=True)
+    
+    if duration:
+        embed.add_field(name="Duration", value=duration, inline=True)
+    
+    if reason:
+        embed.add_field(name="Reason", value=reason, inline=False)
+    
+    if user:
+        embed.set_footer(text=f"User ID: {user.id}")
+        embed.set_thumbnail(url=user.display_avatar.url)
+    elif channel:
+        embed.set_footer(text=f"Channel ID: {channel.id}")
+    
+    message = await log_channel.send(embed=embed)
+    
+    # If there's evidence, add it as a file
+    if evidence:
+        if isinstance(evidence, str):
+            # If evidence is a text string, create a file
+            evidence_file = discord.File(io.StringIO(evidence), filename="evidence.txt")
+            await log_channel.send(file=evidence_file)
+        else:
+            # Assume evidence is already a File object
+            await log_channel.send(file=evidence)
+    
+    return message
 
-# Moderation Commands
+def has_mod_role(ctx):
+    """Check if user has a moderator role"""
+    mod_roles = ["moderator", "mod", "admin", "administrator"]
+    return any(role.name.lower() in mod_roles for role in ctx.author.roles) or ctx.author.guild_permissions.administrator
+
+async def send_paginated_embed(ctx, title, pages, color=discord.Color.blue()):
+    """Send a paginated embed for long content"""
+    if not pages:
+        await ctx.send("No content to display.")
+        return
+    
+    current_page = 0
+    
+    embed = discord.Embed(title=title, description=pages[0], color=color)
+    embed.set_footer(text=f"Page {current_page+1}/{len(pages)}")
+    
+    if len(pages) == 1:
+        await ctx.send(embed=embed)
+        return
+    
+    # Create a message with buttons
+    view = discord.ui.View(timeout=120)
+    
+    # Previous button
+    previous_button = discord.ui.Button(
+        style=discord.ButtonStyle.secondary,
+        emoji="⬅️",
+        custom_id="previous"
+    )
+    
+    # Next button
+    next_button = discord.ui.Button(
+        style=discord.ButtonStyle.secondary,
+        emoji="➡️",
+        custom_id="next"
+    )
+    
+    async def button_callback(interaction):
+        nonlocal current_page
+        
+        if interaction.data["custom_id"] == "previous":
+            current_page = (current_page - 1) % len(pages)
+        elif interaction.data["custom_id"] == "next":
+            current_page = (current_page + 1) % len(pages)
+        
+        embed.description = pages[current_page]
+        embed.set_footer(text=f"Page {current_page+1}/{len(pages)}")
+        
+        await interaction.response.edit_message(embed=embed)
+    
+    previous_button.callback = button_callback
+    next_button.callback = button_callback
+    
+    view.add_item(previous_button)
+    view.add_item(next_button)
+    
+    await ctx.send(embed=embed, view=view)
+
+def split_text(text, max_length=4000):
+    """Split text into chunks for pagination"""
+    if len(text) <= max_length:
+        return [text]
+    
+    chunks = []
+    for i in range(0, len(text), max_length):
+        chunks.append(text[i:i+max_length])
+    
+    return chunks
+
+def parse_time(time_str):
+    """Parse time string into seconds"""
+    time_units = {
+        's': 1,
+        'm': 60,
+        'h': 3600,
+        'd': 86400,
+        'w': 604800
+    }
+    
+    # Default to seconds if no unit is provided
+    if time_str.isdigit():
+        return int(time_str)
+    
+    # Parse time with unit
+    unit = time_str[-1].lower()
+    if unit in time_units and time_str[:-1].isdigit():
+        return int(time_str[:-1]) * time_units[unit]
+    
+    raise ValueError("Invalid time format. Use a number followed by s, m, h, d, or w.")
+
+def format_time_delta(seconds):
+    """Format a time delta in seconds to a human-readable string"""
+    if seconds < 60:
+        return f"{seconds} seconds"
+    elif seconds < 3600:
+        minutes = seconds // 60
+        return f"{minutes} minutes"
+    elif seconds < 86400:
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        return f"{hours} hours, {minutes} minutes"
+    else:
+        days = seconds // 86400
+        hours = (seconds % 86400) // 3600
+        return f"{days} days, {hours} hours"
+
+# Moderation commands
 @bot.command()
+@commands.guild_only()
 @commands.has_permissions(kick_members=True)
 async def kick(ctx, member: discord.Member, *, reason="No reason provided"):
     """Kick a member from the server"""
-    if member == ctx.author:
-        await ctx.send("❌ You cannot kick yourself.")
-        return
+    stats_manager.log_command("kick")
     
-    if member.top_role >= ctx.author.top_role and ctx.author != ctx.guild.owner:
-        await ctx.send("❌ You cannot kick someone with a higher or equal role.")
-        return
+    if ctx.author.top_role <= member.top_role:
+        return await ctx.send("You cannot kick someone with a role higher than or equal to yours.")
     
     try:
-        # Create moderation case
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        case_count = guild_data.get("case_count", 0) + 1
-        guild_data["case_count"] = case_count
-        await db.update_guild(ctx.guild.id, guild_data)
+        # Send DM to the user
+        kick_dm = discord.Embed(
+            title=f"You've been kicked from {ctx.guild.name}",
+            description=f"Reason: {reason}",
+            color=discord.Color.red()
+        )
+        kick_dm.set_footer(text=f"Kicked by {ctx.author.name}#{ctx.author.discriminator}")
         
-        case_data = {
-            "case_id": case_count,
-            "guild_id": ctx.guild.id,
-            "user_id": member.id,
-            "moderator_id": ctx.author.id,
-            "action": "kick",
-            "reason": reason,
-            "timestamp": datetime.datetime.utcnow().timestamp()
-        }
-        
-        await db.create_moderation_case(case_data)
-        
-        # DM the user
         try:
-            embed = discord.Embed(
-                title=f"You were kicked from {ctx.guild.name}",
-                description=f"**Reason:** {reason}\n**Case ID:** {case_count}",
-                color=ERROR_COLOR
-            )
-            await member.send(embed=embed)
+            await member.send(embed=kick_dm)
         except:
-            pass  # Member might have DMs disabled
+            await ctx.send("Note: Could not send a DM to the user.")
         
         # Kick the member
-        await ctx.guild.kick(member, reason=f"{reason} - By {ctx.author}")
+        await member.kick(reason=f"{ctx.author}: {reason}")
+        
+        # Log the action
+        await log_action(ctx.guild, "Kick", member, ctx.author, reason)
         
         # Send confirmation
         embed = discord.Embed(
-            title="✅ Member Kicked",
-            description=f"{member.mention} has been kicked from the server.\n**Reason:** {reason}\n**Case ID:** {case_count}",
-            color=SUCCESS_COLOR
+            title="Member Kicked",
+            description=f"{member.mention} has been kicked from the server.",
+            color=discord.Color.orange()
         )
+        embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
         
-        # Log the action
-        if "moderation" in guild_data and guild_data["moderation"].get("log_channel"):
-            log_channel = bot.get_channel(guild_data["moderation"]["log_channel"])
-            if log_channel:
-                log_embed = discord.Embed(
-                    title=f"Member Kicked | Case #{case_count}",
-                    description=f"**Member:** {member} ({member.id})\n**Moderator:** {ctx.author.mention}\n**Reason:** {reason}",
-                    color=WARNING_COLOR,
-                    timestamp=datetime.datetime.utcnow()
-                )
-                log_embed.set_thumbnail(url=member.display_avatar.url)
-                await log_channel.send(embed=log_embed)
-                
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to kick that member.")
     except Exception as e:
-        await ctx.send(f"❌ Error kicking member: {e}")
-    
-    await db.increment_stats("commands_used")
-    await db.increment_stats("members_kicked")
+        await ctx.send(f"An error occurred: {str(e)}")
 
 @bot.command()
+@commands.guild_only()
 @commands.has_permissions(ban_members=True)
-async def ban(ctx, member: discord.Member, *, reason="No reason provided"):
+async def ban(ctx, member: Union[discord.Member, discord.User, int], *, reason="No reason provided"):
     """Ban a member from the server"""
-    if member == ctx.author:
-        await ctx.send("❌ You cannot ban yourself.")
-        return
-    
-    if member.top_role >= ctx.author.top_role and ctx.author != ctx.guild.owner:
-        await ctx.send("❌ You cannot ban someone with a higher or equal role.")
-        return
+    stats_manager.log_command("ban")
     
     try:
-        # Create moderation case
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        case_count = guild_data.get("case_count", 0) + 1
-        guild_data["case_count"] = case_count
-        await db.update_guild(ctx.guild.id, guild_data)
+        # Handle different inputs for member
+        if isinstance(member, int):
+            try:
+                member = await bot.fetch_user(member)
+            except:
+                return await ctx.send("Could not find a user with that ID.")
         
-        case_data = {
-            "case_id": case_count,
-            "guild_id": ctx.guild.id,
-            "user_id": member.id,
-            "moderator_id": ctx.author.id,
-            "action": "ban",
-            "reason": reason,
-            "timestamp": datetime.datetime.utcnow().timestamp()
-        }
+        # Check permissions if member is in the server
+        if isinstance(member, discord.Member) and ctx.author.top_role <= member.top_role:
+            return await ctx.send("You cannot ban someone with a role higher than or equal to yours.")
         
-        await db.create_moderation_case(case_data)
-        
-        # DM the user
-        try:
-            embed = discord.Embed(
-                title=f"You were banned from {ctx.guild.name}",
-                description=f"**Reason:** {reason}\n**Case ID:** {case_count}",
-                color=ERROR_COLOR
+        # Send DM to the user if possible
+        if isinstance(member, (discord.Member, discord.User)):
+            ban_dm = discord.Embed(
+                title=f"You've been banned from {ctx.guild.name}",
+                description=f"Reason: {reason}",
+                color=discord.Color.red()
             )
-            await member.send(embed=embed)
-        except:
-            pass  # Member might have DMs disabled
+            ban_dm.set_footer(text=f"Banned by {ctx.author.name}#{ctx.author.discriminator}")
+            
+            try:
+                await member.send(embed=ban_dm)
+            except:
+                await ctx.send("Note: Could not send a DM to the user.")
         
-        # Ban the member
-        await ctx.guild.ban(member, reason=f"{reason} - By {ctx.author}")
+        # Ban the user
+        await ctx.guild.ban(member, reason=f"{ctx.author}: {reason}", delete_message_days=1)
+        
+        # Log the action
+        await log_action(ctx.guild, "Ban", member, ctx.author, reason)
         
         # Send confirmation
         embed = discord.Embed(
-            title="🔨 Member Banned",
-            description=f"{member.mention} has been banned from the server.\n**Reason:** {reason}\n**Case ID:** {case_count}",
-            color=SUCCESS_COLOR
+            title="User Banned",
+            description=f"{member.mention} has been banned from the server.",
+            color=discord.Color.red()
         )
+        embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
         
-        # Log the action
-        if "moderation" in guild_data and guild_data["moderation"].get("log_channel"):
-            log_channel = bot.get_channel(guild_data["moderation"]["log_channel"])
-            if log_channel:
-                log_embed = discord.Embed(
-                    title=f"Member Banned | Case #{case_count}",
-                    description=f"**Member:** {member} ({member.id})\n**Moderator:** {ctx.author.mention}\n**Reason:** {reason}",
-                    color=ERROR_COLOR,
-                    timestamp=datetime.datetime.utcnow()
-                )
-                log_embed.set_thumbnail(url=member.display_avatar.url)
-                await log_channel.send(embed=log_embed)
-                
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to ban that user.")
     except Exception as e:
-        await ctx.send(f"❌ Error banning member: {e}")
-    
-    await db.increment_stats("commands_used")
-    await db.increment_stats("members_banned")
+        await ctx.send(f"An error occurred: {str(e)}")
 
 @bot.command()
+@commands.guild_only()
+@commands.has_permissions(ban_members=True)
+async def tempban(ctx, member: Union[discord.Member, discord.User, int], duration, *, reason="No reason provided"):
+    """Temporarily ban a member for a specified duration"""
+    stats_manager.log_command("tempban")
+    
+    try:
+        # Convert duration to seconds
+        try:
+            duration_seconds = parse_time(duration)
+            if duration_seconds <= 0:
+                return await ctx.send("Duration must be a positive number.")
+        except ValueError as e:
+            return await ctx.send(str(e))
+        
+        # Handle different inputs for member
+        if isinstance(member, int):
+            try:
+                member = await bot.fetch_user(member)
+            except:
+                return await ctx.send("Could not find a user with that ID.")
+        
+        # Check permissions if member is in the server
+        if isinstance(member, discord.Member) and ctx.author.top_role <= member.top_role:
+            return await ctx.send("You cannot ban someone with a role higher than or equal to yours.")
+        
+        # Calculate end time
+        end_time = datetime.datetime.utcnow() + datetime.timedelta(seconds=duration_seconds)
+        human_duration = format_time_delta(duration_seconds)
+        
+        # Send DM to the user if possible
+        if isinstance(member, (discord.Member, discord.User)):
+            ban_dm = discord.Embed(
+                title=f"You've been temporarily banned from {ctx.guild.name}",
+                description=f"Reason: {reason}\nDuration: {human_duration}",
+                color=discord.Color.red()
+            )
+            ban_dm.set_footer(text=f"Banned by {ctx.author.name}#{ctx.author.discriminator}")
+            
+            try:
+                await member.send(embed=ban_dm)
+            except:
+                await ctx.send("Note: Could not send a DM to the user.")
+        
+        # Ban the user
+        await ctx.guild.ban(member, reason=f"{ctx.author}: {reason} (Temporary: {human_duration})", delete_message_days=1)
+        
+        # Store the temporary ban in the database
+        tempban_manager.add_tempban(ctx.guild.id, member.id, ctx.author.id, reason, end_time)
+        
+        # Log the action
+        await log_action(ctx.guild, "Temporary Ban", member, ctx.author, reason, human_duration)
+        
+        # Send confirmation
+        embed = discord.Embed(
+            title="User Temporarily Banned",
+            description=f"{member.mention} has been banned from the server for {human_duration}.",
+            color=discord.Color.red()
+        )
+        embed.add_field(name="Reason", value=reason)
+        embed.add_field(name="Expires", value=f"<t:{int(end_time.timestamp())}:F>")
+        await ctx.send(embed=embed)
+        
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to ban that user.")
+    except Exception as e:
+        await ctx.send(f"An error occurred: {str(e)}")
+
+@bot.command()
+@commands.guild_only()
 @commands.has_permissions(ban_members=True)
 async def unban(ctx, user_id: int, *, reason="No reason provided"):
-    """Unban a user by their ID"""
+    """Unban a user by ID"""
+    stats_manager.log_command("unban")
+    
     try:
-        # Check if user is banned
-        ban_entry = None
-        async for entry in ctx.guild.bans():
-            if entry.user.id == user_id:
-                ban_entry = entry
-                break
+        # Check if the user is banned
+        try:
+            ban_entry = await ctx.guild.fetch_ban(discord.Object(id=user_id))
+            user = ban_entry.user
+        except discord.NotFound:
+            return await ctx.send(f"User with ID {user_id} is not banned.")
         
-        if not ban_entry:
-            await ctx.send("❌ This user is not banned.")
-            return
-        
-        # Create moderation case
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        case_count = guild_data.get("case_count", 0) + 1
-        guild_data["case_count"] = case_count
-        await db.update_guild(ctx.guild.id, guild_data)
-        
-        case_data = {
-            "case_id": case_count,
-            "guild_id": ctx.guild.id,
-            "user_id": user_id,
-            "moderator_id": ctx.author.id,
-            "action": "unban",
-            "reason": reason,
-            "timestamp": datetime.datetime.utcnow().timestamp()
-        }
-        
-        await db.create_moderation_case(case_data)
+        # Remove from tempban list if it exists
+        tempban_manager.remove_tempban(ctx.guild.id, user_id)
         
         # Unban the user
-        await ctx.guild.unban(ban_entry.user, reason=f"{reason} - By {ctx.author}")
+        await ctx.guild.unban(user, reason=f"{ctx.author}: {reason}")
+        
+        # Log the action
+        await log_action(ctx.guild, "Unban", user, ctx.author, reason)
         
         # Send confirmation
         embed = discord.Embed(
-            title="✅ User Unbanned",
-            description=f"{ban_entry.user.mention} ({ban_entry.user.id}) has been unbanned from the server.\n**Reason:** {reason}\n**Case ID:** {case_count}",
-            color=SUCCESS_COLOR
+            title="User Unbanned",
+            description=f"{user.name}#{user.discriminator} has been unbanned from the server.",
+            color=discord.Color.green()
         )
+        embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
         
-        # Log the action
-        if "moderation" in guild_data and guild_data["moderation"].get("log_channel"):
-            log_channel = bot.get_channel(guild_data["moderation"]["log_channel"])
-            if log_channel:
-                log_embed = discord.Embed(
-                    title=f"User Unbanned | Case #{case_count}",
-                    description=f"**User:** {ban_entry.user} ({ban_entry.user.id})\n**Moderator:** {ctx.author.mention}\n**Reason:** {reason}",
-                    color=SUCCESS_COLOR,
-                    timestamp=datetime.datetime.utcnow()
-                )
-                await log_channel.send(embed=log_embed)
-                
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to unban users.")
     except Exception as e:
-        await ctx.send(f"❌ Error unbanning user: {e}")
-    
-    await db.increment_stats("commands_used")
+        await ctx.send(f"An error occurred: {str(e)}")
 
 @bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_roles=True)
+async def mute(ctx, member: discord.Member, duration: Optional[str] = None, *, reason="No reason provided"):
+    """Mute a member (prevent them from sending messages)"""
+    stats_manager.log_command("mute")
+    
+    if ctx.author.top_role <= member.top_role:
+        return await ctx.send("You cannot mute someone with a role higher than or equal to yours.")
+    
+    try:
+        # Find or create mute role
+        mute_role = discord.utils.get(ctx.guild.roles, name=config['mute_role_name'])
+        if not mute_role:
+            # Create muted role
+            mute_role = await ctx.guild.create_role(name=config['mute_role_name'], reason="Mute role for moderation")
+            
+            # Set permissions for the muted role in all text channels
+            for channel in ctx.guild.channels:
+                if isinstance(channel, discord.TextChannel):
+                    await channel.set_permissions(mute_role, send_messages=False, add_reactions=False)
+                elif isinstance(channel, discord.VoiceChannel):
+                    await channel.set_permissions(mute_role, speak=False)
+        
+        # Add mute role to the member
+        await member.add_roles(mute_role, reason=f"{ctx.author}: {reason}")
+        
+        # Calculate duration if provided
+        if duration:
+            try:
+                duration_seconds = parse_time(duration)
+                if duration_seconds <= 0:
+                    return await ctx.send("Duration must be a positive number.")
+                
+                human_duration = format_time_delta(duration_seconds)
+                end_time = datetime.datetime.utcnow() + datetime.timedelta(seconds=duration_seconds)
+                
+                # Send DM to the user
+                mute_dm = discord.Embed(
+                    title=f"You've been muted in {ctx.guild.name}",
+                    description=f"Reason: {reason}\nDuration: {human_duration}",
+                    color=discord.Color.orange()
+                )
+                mute_dm.set_footer(text=f"Muted by {ctx.author.name}#{ctx.author.discriminator}")
+                
+                try:
+                    await member.send(embed=mute_dm)
+                except:
+                    await ctx.send("Note: Could not send a DM to the user.")
+                
+                # Log the action
+                await log_action(ctx.guild, "Mute", member, ctx.author, reason, human_duration)
+                
+                # Send confirmation
+                embed = discord.Embed(
+                    title="Member Muted",
+                    description=f"{member.mention} has been muted for {human_duration}.",
+                    color=discord.Color.orange()
+                )
+                embed.add_field(name="Reason", value=reason)
+                embed.add_field(name="Expires", value=f"<t:{int(end_time.timestamp())}:F>")
+                await ctx.send(embed=embed)
+                
+                # Wait for the duration and then unmute
+                await asyncio.sleep(duration_seconds)
+                
+                # Check if the member still has the mute role
+                member = ctx.guild.get_member(member.id)  # Refresh member
+                if member and mute_role in member.roles:
+                    await member.remove_roles(mute_role, reason="Temporary mute expired")
+                    
+                    # Log the action
+                    await log_action(ctx.guild, "Unmute (Auto)", member, ctx.guild.me, "Temporary mute expired")
+                    
+                    # Send notification
+                    unmute_embed = discord.Embed(
+                        title="Member Unmuted",
+                        description=f"{member.mention} has been automatically unmuted after {human_duration}.",
+                        color=discord.Color.green()
+                    )
+                    await ctx.send(embed=unmute_embed)
+                    
+                    # Send DM to the user
+                    try:
+                        unmute_dm = discord.Embed(
+                            title=f"You've been unmuted in {ctx.guild.name}",
+                            description="Your temporary mute has expired.",
+                            color=discord.Color.green()
+                        )
+                        await member.send(embed=unmute_dm)
+                    except:
+                        pass
+            
+            except ValueError as e:
+                await ctx.send(str(e))
+                return
+        else:
+            # Indefinite mute
+            mute_dm = discord.Embed(
+                title=f"You've been muted in {ctx.guild.name}",
+                description=f"Reason: {reason}\nDuration: Indefinite",
+                color=discord.Color.orange()
+            )
+            mute_dm.set_footer(text=f"Muted by {ctx.author.name}#{ctx.author.discriminator}")
+            
+            try:
+                await member.send(embed=mute_dm)
+            except:
+                await ctx.send("Note: Could not send a DM to the user.")
+            
+            # Log the action
+            await log_action(ctx.guild, "Mute", member, ctx.author, reason)
+            
+            # Send confirmation
+            embed = discord.Embed(
+                title="Member Muted",
+                description=f"{member.mention} has been muted indefinitely.",
+                color=discord.Color.orange()
+            )
+            embed.add_field(name="Reason", value=reason)
+            await ctx.send(embed=embed)
+    
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to manage roles or send messages to that user.")
+    except Exception as e:
+        await ctx.send(f"An error occurred: {str(e)}")
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_roles=True)
+async def unmute(ctx, member: discord.Member, *, reason="No reason provided"):
+    """Unmute a member"""
+    stats_manager.log_command("unmute")
+    
+    try:
+        # Find mute role
+        mute_role = discord.utils.get(ctx.guild.roles, name=config['mute_role_name'])
+        if not mute_role:
+            return await ctx.send("Mute role doesn't exist.")
+        
+        # Check if member is muted
+        if mute_role not in member.roles:
+            return await ctx.send(f"{member.mention} is not muted.")
+        
+        # Remove mute role
+        await member.remove_roles(mute_role, reason=f"{ctx.author}: {reason}")
+        
+        # Log the action
+        await log_action(ctx.guild, "Unmute", member, ctx.author, reason)
+        
+        # Send confirmation
+        embed = discord.Embed(
+            title="Member Unmuted",
+            description=f"{member.mention} has been unmuted.",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Reason", value=reason)
+        await ctx.send(embed=embed)
+        
+        # Send DM to the user
+        try:
+            unmute_dm = discord.Embed(
+                title=f"You've been unmuted in {ctx.guild.name}",
+                description=f"Reason: {reason}",
+                color=discord.Color.green()
+            )
+            unmute_dm.set_footer(text=f"Unmuted by {ctx.author.name}#{ctx.author.discriminator}")
+            await member.send(embed=unmute_dm)
+        except:
+            await ctx.send("Note: Could not send a DM to the user.")
+    
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to manage roles.")
+    except Exception as e:
+        await ctx.send(f"An error occurred: {str(e)}")
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_roles=True)
+async def timeout(ctx, member: discord.Member, duration: str, *, reason="No reason provided"):
+    """Timeout a member using Discord's timeout feature"""
+    stats_manager.log_command("timeout")
+    
+    if ctx.author.top_role <= member.top_role:
+        return await ctx.send("You cannot timeout someone with a role higher than or equal to yours.")
+    
+    try:
+        # Convert duration to seconds
+        try:
+            duration_seconds = parse_time(duration)
+            if duration_seconds <= 0:
+                return await ctx.send("Duration must be a positive number.")
+            
+            # Discord limits timeouts to 28 days
+            if duration_seconds > 2419200:  # 28 days in seconds
+                return await ctx.send("Timeout duration cannot exceed 28 days.")
+        except ValueError as e:
+            return await ctx.send(str(e))
+        
+        # Calculate end time
+        end_time = datetime.datetime.utcnow() + datetime.timedelta(seconds=duration_seconds)
+        human_duration = format_time_delta(duration_seconds)
+        
+        # Apply timeout
+        await member.timeout(until=end_time, reason=f"{ctx.author}: {reason}")
+        
+        # Send DM to the user
+        timeout_dm = discord.Embed(
+            title=f"You've been timed out in {ctx.guild.name}",
+            description=f"Reason: {reason}\nDuration: {human_duration}",
+            color=discord.Color.orange()
+        )
+        timeout_dm.set_footer(text=f"Timed out by {ctx.author.name}#{ctx.author.discriminator}")
+        
+        try:
+            await member.send(embed=timeout_dm)
+        except:
+            await ctx.send("Note: Could not send a DM to the user.")
+        
+        # Log the action
+        await log_action(ctx.guild, "Timeout", member, ctx.author, reason, human_duration)
+        
+        # Send confirmation
+        embed = discord.Embed(
+            title="Member Timed Out",
+            description=f"{member.mention} has been timed out for {human_duration}.",
+            color=discord.Color.orange()
+        )
+        embed.add_field(name="Reason", value=reason)
+        embed.add_field(name="Expires", value=f"<t:{int(end_time.timestamp())}:F>")
+        await ctx.send(embed=embed)
+    
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to timeout that member.")
+    except Exception as e:
+        await ctx.send(f"An error occurred: {str(e)}")
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_roles=True)
+async def removetimeout(ctx, member: discord.Member, *, reason="No reason provided"):
+    """Remove a timeout from a member"""
+    stats_manager.log_command("removetimeout")
+    
+    try:
+        # Check if member is timed out
+        if not member.is_timed_out():
+            return await ctx.send(f"{member.mention} is not timed out.")
+        
+        # Remove timeout
+        await member.timeout(until=None, reason=f"{ctx.author}: {reason}")
+        
+        # Log the action
+        await log_action(ctx.guild, "Remove Timeout", member, ctx.author, reason)
+        
+        # Send confirmation
+        embed = discord.Embed(
+            title="Timeout Removed",
+            description=f"{member.mention}'s timeout has been removed.",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Reason", value=reason)
+        await ctx.send(embed=embed)
+        
+        # Send DM to the user
+        try:
+            remove_timeout_dm = discord.Embed(
+                title=f"Your timeout in {ctx.guild.name} has been removed",
+                description=f"Reason: {reason}",
+                color=discord.Color.green()
+            )
+            remove_timeout_dm.set_footer(text=f"Timeout removed by {ctx.author.name}#{ctx.author.discriminator}")
+            await member.send(embed=remove_timeout_dm)
+        except:
+            await ctx.send("Note: Could not send a DM to the user.")
+    
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to manage timeouts.")
+    except Exception as e:
+        await ctx.send(f"An error occurred: {str(e)}")
+
+@bot.command()
+@commands.guild_only()
 @commands.has_permissions(manage_messages=True)
 async def warn(ctx, member: discord.Member, *, reason="No reason provided"):
     """Warn a member"""
-    if member == ctx.author:
-        await ctx.send("❌ You cannot warn yourself.")
-        return
+    stats_manager.log_command("warn")
     
-    if member.top_role >= ctx.author.top_role and ctx.author != ctx.guild.owner:
-        await ctx.send("❌ You cannot warn someone with a higher or equal role.")
-        return
+    if ctx.author.top_role <= member.top_role:
+        return await ctx.send("You cannot warn someone with a role higher than or equal to yours.")
     
     try:
-        # Create moderation case
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        case_count = guild_data.get("case_count", 0) + 1
-        guild_data["case_count"] = case_count
-        await db.update_guild(ctx.guild.id, guild_data)
+        # Add warning to database
+        warning_count = warning_manager.add_warning(ctx.guild.id, member.id, ctx.author.id, reason)
         
-        case_data = {
-            "case_id": case_count,
-            "guild_id": ctx.guild.id,
-            "user_id": member.id,
-            "moderator_id": ctx.author.id,
-            "action": "warn",
-            "reason": reason,
-            "timestamp": datetime.datetime.utcnow().timestamp()
-        }
+        # Get user's warning history
+        warnings = warning_manager.get_warnings(ctx.guild.id, member.id)
         
-        await db.create_moderation_case(case_data)
-        
-        # DM the user
-        try:
-            embed = discord.Embed(
-                title=f"You were warned in {ctx.guild.name}",
-                description=f"**Reason:** {reason}\n**Case ID:** {case_count}",
-                color=WARNING_COLOR
-            )
-            await member.send(embed=embed)
-        except:
-            pass  # Member might have DMs disabled
-        
-        # Send confirmation
-        embed = discord.Embed(
-            title="⚠️ Member Warned",
-            description=f"{member.mention} has been warned.\n**Reason:** {reason}\n**Case ID:** {case_count}",
-            color=WARNING_COLOR
-        )
-        await ctx.send(embed=embed)
-        
-        # Log the action
-        if "moderation" in guild_data and guild_data["moderation"].get("log_channel"):
-            log_channel = bot.get_channel(guild_data["moderation"]["log_channel"])
-            if log_channel:
-                log_embed = discord.Embed(
-                    title=f"Member Warned | Case #{case_count}",
-                    description=f"**Member:** {member} ({member.id})\n**Moderator:** {ctx.author.mention}\n**Reason:** {reason}",
-                    color=WARNING_COLOR,
-                    timestamp=datetime.datetime.utcnow()
-                )
-                log_embed.set_thumbnail(url=member.display_avatar.url)
-                await log_channel.send(embed=log_embed)
-                
-    except Exception as e:
-        await ctx.send(f"❌ Error warning member: {e}")
-    
-    await db.increment_stats("commands_used")
-    await db.increment_stats("members_warned")
-
-@bot.command()
-@commands.has_permissions(manage_roles=True)
-async def mute(ctx, member: discord.Member, duration: str = None, *, reason="No reason provided"):
-    """Mute a member (timeout)"""
-    if member == ctx.author:
-        await ctx.send("❌ You cannot mute yourself.")
-        return
-    
-    if member.top_role >= ctx.author.top_role and ctx.author != ctx.guild.owner:
-        await ctx.send("❌ You cannot mute someone with a higher or equal role.")
-        return
-    
-    # Parse duration
-    duration_seconds = 0
-    if duration:
-        time_units = {
-            's': 1,
-            'm': 60,
-            'h': 3600,
-            'd': 86400,
-            'w': 604800
-        }
-        
-        try:
-            unit = duration[-1].lower()
-            value = int(duration[:-1])
+        # Auto-moderate based on warning count
+        punishment = None
+        if len(warnings) == 3:
+            # Auto-mute after 3 warnings
+            punishment = "You have been muted for 1 hour due to receiving 3 warnings."
+            mute_role = discord.utils.get(ctx.guild.roles, name=config['mute_role_name'])
+            if not mute_role:
+                mute_role = await ctx.guild.create_role(name=config['mute_role_name'])
+                for channel in ctx.guild.channels:
+                    if isinstance(channel, discord.TextChannel):
+                        await channel.set_permissions(mute_role, send_messages=False, add_reactions=False)
+                    elif isinstance(channel, discord.VoiceChannel):
+                        await channel.set_permissions(mute_role, speak=False)
             
-            if unit in time_units:
-                duration_seconds = value * time_units[unit]
-            else:
-                duration_seconds = int(duration)
-        except:
-            await ctx.send("❌ Invalid duration format. Use a number followed by s, m, h, d, or w.")
-            return
-    
-    if duration_seconds > 2419200:  # 28 days (Discord limit)
-        await ctx.send("❌ Timeout duration cannot exceed 28 days.")
-        return
-    
-    if duration_seconds <= 0:
-        await ctx.send("❌ Duration must be positive.")
-        return
-    
-    try:
-        # Get mute role from guild settings
-        guild_data = await db.get_guild(ctx.guild.id) or {}
+            await member.add_roles(mute_role, reason="Automatic mute: Received 3 warnings")
+            await log_action(ctx.guild, "Mute (Auto)", member, ctx.guild.me, "Automatic mute: Received 3 warnings", "1 hour")
+            
+            # Schedule unmute
+            bot.loop.create_task(auto_unmute(ctx.guild, member, mute_role, 3600))
         
-        # Create moderation case
-        case_count = guild_data.get("case_count", 0) + 1
-        guild_data["case_count"] = case_count
-        await db.update_guild(ctx.guild.id, guild_data)
+        elif len(warnings) == 5:
+            # Auto-kick after 5 warnings
+            punishment = "You have been kicked due to receiving 5 warnings."
+            await ctx.guild.kick(member, reason="Automatic kick: Received 5 warnings")
+            await log_action(ctx.guild, "Kick (Auto)", member, ctx.guild.me, "Automatic kick: Received 5 warnings")
         
-        case_data = {
-            "case_id": case_count,
-            "guild_id": ctx.guild.id,
-            "user_id": member.id,
-            "moderator_id": ctx.author.id,
-            "action": "mute",
-            "reason": reason,
-            "duration": duration_seconds,
-            "timestamp": datetime.datetime.utcnow().timestamp()
-        }
+        elif len(warnings) >= 7:
+            # Auto-ban after 7 warnings
+            punishment = "You have been banned due to receiving 7 warnings."
+            await ctx.guild.ban(member, reason="Automatic ban: Received 7 warnings", delete_message_days=1)
+            await log_action(ctx.guild, "Ban (Auto)", member, ctx.guild.me, "Automatic ban: Received 7 warnings")
         
-        await db.create_moderation_case(case_data)
-        
-        # Apply timeout
-        until = discord.utils.utcnow() + datetime.timedelta(seconds=duration_seconds)
-        await member.timeout(until, reason=f"{reason} - By {ctx.author}")
-        
-        # Format duration for display
-        if duration_seconds < 60:
-            duration_text = f"{duration_seconds} seconds"
-        elif duration_seconds < 3600:
-            duration_text = f"{duration_seconds // 60} minutes"
-        elif duration_seconds < 86400:
-            duration_text = f"{duration_seconds // 3600} hours"
-        else:
-            duration_text = f"{duration_seconds // 86400} days"
-        
-        # DM the user
-        try:
-            embed = discord.Embed(
-                title=f"You were muted in {ctx.guild.name}",
-                description=f"**Duration:** {duration_text}\n**Reason:** {reason}\n**Case ID:** {case_count}",
-                color=WARNING_COLOR
-            )
-            await member.send(embed=embed)
-        except:
-            pass  # Member might have DMs disabled
+        # Log the action
+        await log_action(ctx.guild, "Warning", member, ctx.author, reason)
         
         # Send confirmation
         embed = discord.Embed(
-            title="🔇 Member Muted",
-            description=f"{member.mention} has been muted for {duration_text}.\n**Reason:** {reason}\n**Case ID:** {case_count}",
-            color=SUCCESS_COLOR
+            title="Member Warned",
+            description=f"{member.mention} has been warned.",
+            color=discord.Color.gold()
         )
+        embed.add_field(name="Reason", value=reason)
+        embed.add_field(name="Warning Count", value=warning_count)
+        
+        if punishment:
+            embed.add_field(name="Automatic Action", value=punishment, inline=False)
+        
         await ctx.send(embed=embed)
         
-        # Log the action
-        if "moderation" in guild_data and guild_data["moderation"].get("log_channel"):
-            log_channel = bot.get_channel(guild_data["moderation"]["log_channel"])
-            if log_channel:
-                log_embed = discord.Embed(
-                    title=f"Member Muted | Case #{case_count}",
-                    description=f"**Member:** {member} ({member.id})\n**Moderator:** {ctx.author.mention}\n**Duration:** {duration_text}\n**Reason:** {reason}",
-                    color=WARNING_COLOR,
-                    timestamp=datetime.datetime.utcnow()
-                )
-                log_embed.set_thumbnail(url=member.display_avatar.url)
-                await log_channel.send(embed=log_embed)
-                
-    except Exception as e:
-        await ctx.send(f"❌ Error muting member: {e}")
-    
-    await db.increment_stats("commands_used")
-    await db.increment_stats("members_muted")
-
-@bot.command()
-@commands.has_permissions(manage_roles=True)
-async def unmute(ctx, member: discord.Member, *, reason="No reason provided"):
-    """Unmute a member (remove timeout)"""
-    try:
-        # Check if member is actually muted
-        if not member.is_timed_out():
-            await ctx.send("❌ This member is not muted.")
-            return
-        
-        # Create moderation case
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        case_count = guild_data.get("case_count", 0) + 1
-        guild_data["case_count"] = case_count
-        await db.update_guild(ctx.guild.id, guild_data)
-        
-        case_data = {
-            "case_id": case_count,
-            "guild_id": ctx.guild.id,
-            "user_id": member.id,
-            "moderator_id": ctx.author.id,
-            "action": "unmute",
-            "reason": reason,
-            "timestamp": datetime.datetime.utcnow().timestamp()
-        }
-        
-        await db.create_moderation_case(case_data)
-        
-        # Remove timeout
-        await member.timeout(None, reason=f"Unmuted: {reason} - By {ctx.author}")
-        
-        # DM the user
+        # Send DM to the user
         try:
-            embed = discord.Embed(
-                title=f"You were unmuted in {ctx.guild.name}",
-                description=f"**Reason:** {reason}\n**Case ID:** {case_count}",
-                color=SUCCESS_COLOR
+            warn_dm = discord.Embed(
+                title=f"Warning in {ctx.guild.name}",
+                description=f"You have received a warning.",
+                color=discord.Color.gold()
             )
-            await member.send(embed=embed)
+            warn_dm.add_field(name="Reason", value=reason)
+            warn_dm.add_field(name="Warning Count", value=warning_count)
+            warn_dm.set_footer(text=f"Warning issued by {ctx.author.name}#{ctx.author.discriminator}")
+            
+            if punishment:
+                warn_dm.add_field(name="Automatic Action", value=punishment, inline=False)
+            
+            await member.send(embed=warn_dm)
         except:
-            pass  # Member might have DMs disabled
-        
-        # Send confirmation
-        embed = discord.Embed(
-            title="🔊 Member Unmuted",
-            description=f"{member.mention} has been unmuted.\n**Reason:** {reason}\n**Case ID:** {case_count}",
-            color=SUCCESS_COLOR
-        )
-        await ctx.send(embed=embed)
-        
-        # Log the action
-        if "moderation" in guild_data and guild_data["moderation"].get("log_channel"):
-            log_channel = bot.get_channel(guild_data["moderation"]["log_channel"])
-            if log_channel:
-                log_embed = discord.Embed(
-                    title=f"Member Unmuted | Case #{case_count}",
-                    description=f"**Member:** {member} ({member.id})\n**Moderator:** {ctx.author.mention}\n**Reason:** {reason}",
-                    color=SUCCESS_COLOR,
-                    timestamp=datetime.datetime.utcnow()
-                )
-                log_embed.set_thumbnail(url=member.display_avatar.url)
-                await log_channel.send(embed=log_embed)
-                
-    except Exception as e:
-        await ctx.send(f"❌ Error unmuting member: {e}")
+            await ctx.send("Note: Could not send a DM to the user.")
     
-    await db.increment_stats("commands_used")
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to manage messages or send DMs to that user.")
+    except Exception as e:
+        await ctx.send(f"An error occurred: {str(e)}")
+
+async def auto_unmute(guild, member, mute_role, duration):
+    """Helper function to automatically unmute a member after a duration"""
+    await asyncio.sleep(duration)
+    
+    # Check if the member still has the mute role
+    member = guild.get_member(member.id)  # Refresh member
+    if member and mute_role in member.roles:
+        await member.remove_roles(mute_role, reason="Automatic unmute: Temporary mute expired")
+        await log_action(guild, "Unmute (Auto)", member, guild.me, "Temporary mute expired")
+        
+        # Send DM to the user
+        try:
+            unmute_dm = discord.Embed(
+                title=f"You've been unmuted in {guild.name}",
+                description="Your temporary mute has expired.",
+                color=discord.Color.green()
+            )
+            await member.send(embed=unmute_dm)
+        except:
+            pass  # Silently fail if DM can't be sent
 
 @bot.command()
+@commands.guild_only()
 @commands.has_permissions(manage_messages=True)
-async def purge(ctx, amount: int, user: discord.Member = None):
-    """Delete a specified number of messages"""
-    if amount <= 0 or amount > 100:
-        await ctx.send("❌ Please provide a number between 1 and 100.")
-        return
+async def warnings(ctx, member: discord.Member):
+    """Show warnings for a member"""
+    stats_manager.log_command("warnings")
     
-    try:
-        await ctx.message.delete()  # Delete the command message
-        
-        if user:
-            def check(msg):
-                return msg.author == user
-                
-            deleted = await ctx.channel.purge(limit=amount, check=check)
-            embed = discord.Embed(
-                title="✅ Messages Purged",
-                description=f"Deleted {len(deleted)} messages from {user.mention}.",
-                color=SUCCESS_COLOR
-            )
-        else:
-            deleted = await ctx.channel.purge(limit=amount)
-            embed = discord.Embed(
-                title="✅ Messages Purged",
-                description=f"Deleted {len(deleted)} messages.",
-                color=SUCCESS_COLOR
-            )
-        
-        confirm_msg = await ctx.send(embed=embed)
-        await asyncio.sleep(5)  # Show confirmation for 5 seconds
-        await confirm_msg.delete()
-        
-        # Log the action
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        if "moderation" in guild_data and guild_data["moderation"].get("log_channel"):
-            log_channel = bot.get_channel(guild_data["moderation"]["log_channel"])
-            if log_channel:
-                log_embed = discord.Embed(
-                    title="Messages Purged",
-                    description=f"**Moderator:** {ctx.author.mention}\n**Channel:** {ctx.channel.mention}\n**Messages Deleted:** {len(deleted)}\n**Target User:** {user.mention if user else 'None'}",
-                    color=WARNING_COLOR,
-                    timestamp=datetime.datetime.utcnow()
-                )
-                await log_channel.send(embed=log_embed)
-                
-    except Exception as e:
-        await ctx.send(f"❌ Error purging messages: {e}")
+    warnings = warning_manager.get_warnings(ctx.guild.id, member.id)
     
-    await db.increment_stats("commands_used")
-
-@bot.command()
-@commands.has_permissions(manage_messages=True)
-async def infractions(ctx, member: discord.Member = None):
-    """View a user's infractions"""
-    if member is None:
-        member = ctx.author
+    if not warnings:
+        return await ctx.send(f"{member.mention} has no warnings.")
     
-    try:
-        # Get user cases
-        cases = await db.get_user_cases(member.id, ctx.guild.id)
-        
-        if not cases:
-            embed = discord.Embed(
-                title=f"Infractions for {member}",
-                description="This user has no infractions.",
-                color=EMBED_COLOR
-            )
-            await ctx.send(embed=embed)
-            return
-        
-        # Sort cases by timestamp (newest first)
-        cases.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
-        
-        # Create embed
-        embed = discord.Embed(
-            title=f"Infractions for {member}",
-            description=f"Found {len(cases)} infractions for this user.",
-            color=EMBED_COLOR
-        )
-        
-        # Add up to 10 most recent cases
-        for case in cases[:10]:
-            action = case.get("action", "unknown").upper()
-            reason = case.get("reason", "No reason provided")
-            case_id = case.get("case_id", 0)
-            timestamp = datetime.datetime.fromtimestamp(case.get("timestamp", 0))
-            
-            # Format action for display
-            if action == "BAN":
-                action = "🔨 BAN"
-            elif action == "KICK":
-                action = "👢 KICK"
-            elif action == "WARN":
-                action = "⚠️ WARN"
-            elif action == "MUTE":
-                action = "🔇 MUTE"
-            elif action == "UNMUTE":
-                action = "🔊 UNMUTE"
-            elif action == "UNBAN":
-                action = "✅ UNBAN"
-            
-            embed.add_field(
-                name=f"Case #{case_id} | {action} | {timestamp.strftime('%Y-%m-%d')}",
-                value=f"**Reason:** {reason}",
-                inline=False
-            )
-        
-        if len(cases) > 10:
-            embed.set_footer(text=f"Showing 10 most recent out of {len(cases)} infractions.")
-        
-        await ctx.send(embed=embed)
-        
-    except Exception as e:
-        await ctx.send(f"❌ Error retrieving infractions: {e}")
+    # Create paginated embeds for warnings
+    embed = discord.Embed(
+        title=f"Warnings for {member.name}#{member.discriminator}",
+        color=discord.Color.gold()
+    )
     
-    await db.increment_stats("commands_used")
-
-# Economy Commands
-@bot.command()
-async def balance(ctx, member: discord.Member = None):
-    """Check your balance or someone else's"""
-    if member is None:
-        member = ctx.author
-    
-    try:
-        # Get guild settings
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        if not guild_data.get("economy", {}).get("enabled", False):
-            await ctx.send("❌ Economy system is not enabled on this server.")
-            return
+    for i, warning in enumerate(warnings, 1):
+        moderator = ctx.guild.get_member(int(warning["moderator_id"]))
+        moderator_name = moderator.name if moderator else "Unknown Moderator"
         
-        currency_name = guild_data["economy"]["currency_name"]
-        currency_symbol = guild_data["economy"]["currency_symbol"]
-        
-        # Get user economy data
-        economy_data = await db.get_economy(member.id) or {}
-        
-        # If no economy data exists for the user, create it
-        if not economy_data:
-            starting_balance = guild_data["economy"]["starting_balance"]
-            economy_data = {
-                "_id": member.id,
-                "balance": starting_balance,
-                "bank": 0,
-                "last_daily": 0,
-                "last_work": 0,
-                "inventory": {}
-            }
-            await db.update_economy(member.id, economy_data)
-        
-        # Create embed
-        embed = discord.Embed(
-            title=f"{member.display_name}'s Balance",
-            color=EMBED_COLOR
-        )
+        timestamp = datetime.datetime.fromisoformat(warning["timestamp"])
+        time_str = f"<t:{int(timestamp.timestamp())}:F>"
         
         embed.add_field(
-            name="👛 Wallet",
-            value=f"{currency_symbol} {economy_data.get('balance', 0):,}",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="🏦 Bank",
-            value=f"{currency_symbol} {economy_data.get('bank', 0):,}",
-            inline=True
-        )
-        
-        total = economy_data.get('balance', 0) + economy_data.get('bank', 0)
-        embed.add_field(
-            name="💰 Total",
-            value=f"{currency_symbol} {total:,}",
-            inline=True
-        )
-        
-        embed.set_thumbnail(url=member.display_avatar.url)
-        
-        await ctx.send(embed=embed)
-        
-    except Exception as e:
-        await ctx.send(f"❌ Error checking balance: {e}")
-    
-    await db.increment_stats("commands_used")
-
-@bot.command()
-async def daily(ctx):
-    """Claim your daily reward"""
-    try:
-        # Get guild settings
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        if not guild_data.get("economy", {}).get("enabled", False):
-            await ctx.send("❌ Economy system is not enabled on this server.")
-            return
-        
-        currency_name = guild_data["economy"]["currency_name"]
-        currency_symbol = guild_data["economy"]["currency_symbol"]
-        
-        # Get user economy data
-        economy_data = await db.get_economy(ctx.author.id) or {}
-        
-        # If no economy data exists for the user, create it
-        if not economy_data:
-            starting_balance = guild_data["economy"]["starting_balance"]
-            economy_data = {
-                "_id": ctx.author.id,
-                "balance": starting_balance,
-                "bank": 0,
-                "last_daily": 0,
-                "last_work": 0,
-                "inventory": {}
-            }
-        
-        # Check cooldown
-        last_daily = economy_data.get("last_daily", 0)
-        now = time.time()
-        
-        # 24 hours = 86400 seconds
-        if now - last_daily < 86400:
-            next_daily = last_daily + 86400
-            time_left = next_daily - now
-            hours = int(time_left // 3600)
-            minutes = int((time_left % 3600) // 60)
-            
-            embed = discord.Embed(
-                title="⏰ Daily Reward on Cooldown",
-                description=f"You need to wait **{hours}h {minutes}m** before claiming your next daily reward.",
-                color=WARNING_COLOR
-            )
-            await ctx.send(embed=embed)
-            return
-        
-        # Determine daily amount
-        is_premium = await db.is_premium(ctx.guild.id)
-        daily_amount = 300 if is_premium else 200
-        
-        # Update user data
-        economy_data["balance"] = economy_data.get("balance", 0) + daily_amount
-        economy_data["last_daily"] = now
-        
-        await db.update_economy(ctx.author.id, economy_data)
-        
-        # Create embed
-        embed = discord.Embed(
-            title="✅ Daily Reward Claimed",
-            description=f"You received **{currency_symbol} {daily_amount:,}** as your daily reward!",
-            color=SUCCESS_COLOR
-        )
-        
-        embed.add_field(
-            name="New Balance",
-            value=f"{currency_symbol} {economy_data['balance']:,}",
+            name=f"Warning #{i}",
+            value=f"**Reason:** {warning['reason']}\n**Moderator:** {moderator_name}\n**Date:** {time_str}",
             inline=False
         )
-        
-        if is_premium:
-            embed.set_footer(text="Premium server bonus applied!")
-        
-        await ctx.send(embed=embed)
-        
-    except Exception as e:
-        await ctx.send(f"❌ Error claiming daily reward: {e}")
     
-    await db.increment_stats("commands_used")
-    await db.increment_stats("daily_rewards_claimed")
+    embed.set_thumbnail(url=member.display_avatar.url)
+    embed.set_footer(text=f"Total Warnings: {len(warnings)}")
+    
+    await ctx.send(embed=embed)
 
 @bot.command()
-async def work(ctx):
-    """Work to earn some money"""
-    try:
-        # Get guild settings
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        if not guild_data.get("economy", {}).get("enabled", False):
-            await ctx.send("❌ Economy system is not enabled on this server.")
-            return
+@commands.guild_only()
+@commands.has_permissions(manage_messages=True)
+async def clearwarnings(ctx, member: discord.Member):
+    """Clear all warnings for a member"""
+    stats_manager.log_command("clearwarnings")
+    
+    warnings_removed = warning_manager.clear_warnings(ctx.guild.id, member.id)
+    
+    if warnings_removed == 0:
+        return await ctx.send(f"{member.mention} had no warnings to clear.")
+    
+    # Log the action
+    await log_action(ctx.guild, "Clear Warnings", member, ctx.author, f"Cleared {warnings_removed} warnings")
+    
+    # Send confirmation
+    embed = discord.Embed(
+        title="Warnings Cleared",
+        description=f"Cleared {warnings_removed} warnings for {member.mention}.",
+        color=discord.Color.green()
+    )
+    await ctx.send(embed=embed)
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_messages=True)
+async def removewarning(ctx, member: discord.Member, warning_id: int):
+    """Remove a specific warning from a member"""
+    stats_manager.log_command("removewarning")
+    
+    # Warning IDs are 1-indexed for user display but 0-indexed in storage
+    index = warning_id - 1
+    
+    success, removed = warning_manager.remove_warning(ctx.guild.id, member.id, index)
+    
+    if not success:
+        return await ctx.send(f"Could not find warning #{warning_id} for {member.mention}.")
+    
+    # Log the action
+    await log_action(
+        ctx.guild, 
+        "Remove Warning", 
+        member, 
+        ctx.author, 
+        f"Removed warning #{warning_id}: {removed['reason']}"
+    )
+    
+    # Send confirmation
+    embed = discord.Embed(
+        title="Warning Removed",
+        description=f"Removed warning #{warning_id} from {member.mention}.",
+        color=discord.Color.green()
+    )
+    
+    moderator = ctx.guild.get_member(int(removed["moderator_id"]))
+    moderator_name = moderator.name if moderator else "Unknown Moderator"
+    
+    embed.add_field(name="Original Reason", value=removed["reason"])
+    embed.add_field(name="Original Moderator", value=moderator_name)
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_messages=True)
+async def note(ctx, member: discord.Member, *, content):
+    """Add a note about a member"""
+    stats_manager.log_command("note")
+    
+    # Add note to database
+    note_count = note_manager.add_note(ctx.guild.id, member.id, ctx.author.id, content)
+    
+    # Log the action
+    await log_action(ctx.guild, "Note Added", member, ctx.author, content)
+    
+    # Send confirmation
+    embed = discord.Embed(
+        title="Note Added",
+        description=f"Added note for {member.mention}.",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="Content", value=content)
+    embed.add_field(name="Note Count", value=note_count)
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_messages=True)
+async def notes(ctx, member: discord.Member):
+    """Show notes for a member"""
+    stats_manager.log_command("notes")
+    
+    notes = note_manager.get_notes(ctx.guild.id, member.id)
+    
+    if not notes:
+        return await ctx.send(f"{member.mention} has no notes.")
+    
+    # Create paginated embeds for notes
+    embed = discord.Embed(
+        title=f"Notes for {member.name}#{member.discriminator}",
+        color=discord.Color.blue()
+    )
+    
+    for i, note in enumerate(notes, 1):
+        moderator = ctx.guild.get_member(int(note["moderator_id"]))
+        moderator_name = moderator.name if moderator else "Unknown Moderator"
         
-        currency_name = guild_data["economy"]["currency_name"]
-        currency_symbol = guild_data["economy"]["currency_symbol"]
-        
-        # Get user economy data
-        economy_data = await db.get_economy(ctx.author.id) or {}
-        
-        # If no economy data exists for the user, create it
-        if not economy_data:
-            starting_balance = guild_data["economy"]["starting_balance"]
-            economy_data = {
-                "_id": ctx.author.id,
-                "balance": starting_balance,
-                "bank": 0,
-                "last_daily": 0,
-                "last_work": 0,
-                "inventory": {}
-            }
-        
-        # Check cooldown
-        last_work = economy_data.get("last_work", 0)
-        now = time.time()
-        
-        # 30 minutes = 1800 seconds
-        if now - last_work < 1800:
-            next_work = last_work + 1800
-            time_left = next_work - now
-            minutes = int(time_left // 60)
-            seconds = int(time_left % 60)
-            
-            embed = discord.Embed(
-                title="⏰ Work on Cooldown",
-                description=f"You need to wait **{minutes}m {seconds}s** before working again.",
-                color=WARNING_COLOR
-            )
-            await ctx.send(embed=embed)
-            return
-        
-        # Work jobs and messages
-        jobs = [
-            {"job": "Software Developer", "min": 50, "max": 200},
-            {"job": "Pizza Delivery Driver", "min": 30, "max": 120},
-            {"job": "Teacher", "min": 40, "max": 150},
-            {"job": "Doctor", "min": 70, "max": 250},
-            {"job": "Streamer", "min": 20, "max": 300},
-            {"job": "Lawyer", "min": 60, "max": 220},
-            {"job": "Chef", "min": 40, "max": 180},
-            {"job": "Farmer", "min": 30, "max": 130},
-            {"job": "Security Guard", "min": 35, "max": 140},
-            {"job": "Freelancer", "min": 25, "max": 280}
-        ]
-        
-        messages = [
-            "You worked as a {job} and earned {amount} {currency}!",
-            "Your shift as a {job} just ended. You earned {amount} {currency}!",
-            "You spent hours as a {job} and received {amount} {currency}!",
-            "Being a {job} paid off! You earned {amount} {currency}!",
-            "Your work as a {job} earned you {amount} {currency}!"
-        ]
-        
-        # Select random job and calculate earnings
-        job = random.choice(jobs)
-        is_premium = await db.is_premium(ctx.guild.id)
-        
-        min_amount = job["min"]
-        max_amount = job["max"]
-        
-        if is_premium:
-            # 25% bonus for premium servers
-            min_amount = int(min_amount * 1.25)
-            max_amount = int(max_amount * 1.25)
-        
-        amount = random.randint(min_amount, max_amount)
-        
-        # Update user data
-        economy_data["balance"] = economy_data.get("balance", 0) + amount
-        economy_data["last_work"] = now
-        
-        await db.update_economy(ctx.author.id, economy_data)
-        
-        # Create message
-        message = random.choice(messages).format(
-            job=job["job"],
-            amount=f"{currency_symbol} {amount:,}",
-            currency=currency_name
-        )
-        
-        # Create embed
-        embed = discord.Embed(
-            title="💼 Work Completed",
-            description=message,
-            color=SUCCESS_COLOR
-        )
+        timestamp = datetime.datetime.fromisoformat(note["timestamp"])
+        time_str = f"<t:{int(timestamp.timestamp())}:F>"
         
         embed.add_field(
-            name="New Balance",
-            value=f"{currency_symbol} {economy_data['balance']:,}",
+            name=f"Note #{i}",
+            value=f"**Content:** {note['content']}\n**Moderator:** {moderator_name}\n**Date:** {time_str}",
             inline=False
         )
-        
-        if is_premium:
-            embed.set_footer(text="Premium server bonus applied!")
-        
-        await ctx.send(embed=embed)
-        
-    except Exception as e:
-        await ctx.send(f"❌ Error working: {e}")
     
-    await db.increment_stats("commands_used")
-    await db.increment_stats("work_completed")
+    embed.set_thumbnail(url=member.display_avatar.url)
+    embed.set_footer(text=f"Total Notes: {len(notes)}")
+    
+    await ctx.send(embed=embed)
 
 @bot.command()
-async def deposit(ctx, amount: str):
-    """Deposit money into your bank"""
-    try:
-        # Get guild settings
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        if not guild_data.get("economy", {}).get("enabled", False):
-            await ctx.send("❌ Economy system is not enabled on this server.")
-            return
-        
-        currency_name = guild_data["economy"]["currency_name"]
-        currency_symbol = guild_data["economy"]["currency_symbol"]
-        
-        # Get user economy data
-        economy_data = await db.get_economy(ctx.author.id) or {}
-        
-        # If no economy data exists for the user, create it
-        if not economy_data:
-            starting_balance = guild_data["economy"]["starting_balance"]
-            economy_data = {
-                "_id": ctx.author.id,
-                "balance": starting_balance,
-                "bank": 0,
-                "last_daily": 0,
-                "last_work": 0,
-                "inventory": {}
-            }
-        
-        current_balance = economy_data.get("balance", 0)
-        
-        # Handle special amount values
-        if amount.lower() == "all":
-            deposit_amount = current_balance
-        elif amount.lower() == "half":
-            deposit_amount = current_balance // 2
-        else:
-            try:
-                deposit_amount = int(amount)
-            except:
-                await ctx.send("❌ Please provide a valid amount.")
-                return
-        
-        if deposit_amount <= 0:
-            await ctx.send("❌ You must deposit a positive amount.")
-            return
-        
-        if deposit_amount > current_balance:
-            await ctx.send("❌ You don't have that much money in your wallet.")
-            return
-        
-        # Update balances
-        economy_data["balance"] = current_balance - deposit_amount
-        economy_data["bank"] = economy_data.get("bank", 0) + deposit_amount
-        
-        await db.update_economy(ctx.author.id, economy_data)
-        
-        # Create embed
-        embed = discord.Embed(
-            title="💳 Money Deposited",
-            description=f"You deposited **{currency_symbol} {deposit_amount:,}** into your bank account.",
-            color=SUCCESS_COLOR
-        )
-        
-        embed.add_field(
-            name="Wallet Balance",
-            value=f"{currency_symbol} {economy_data['balance']:,}",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="Bank Balance",
-            value=f"{currency_symbol} {economy_data['bank']:,}",
-            inline=True
-        )
-        
-        await ctx.send(embed=embed)
-        
-    except Exception as e:
-        await ctx.send(f"❌ Error depositing money: {e}")
+@commands.guild_only()
+@commands.has_permissions(manage_messages=True)
+async def removenote(ctx, member: discord.Member, note_id: int):
+    """Remove a specific note from a member"""
+    stats_manager.log_command("removenote")
     
-    await db.increment_stats("commands_used")
+    # Note IDs are 1-indexed for user display but 0-indexed in storage
+    index = note_id - 1
+    
+    success, removed = note_manager.remove_note(ctx.guild.id, member.id, index)
+    
+    if not success:
+        return await ctx.send(f"Could not find note #{note_id} for {member.mention}.")
+    
+    # Log the action
+    await log_action(
+        ctx.guild, 
+        "Remove Note", 
+        member, 
+        ctx.author, 
+        f"Removed note #{note_id}: {removed['content']}"
+    )
+    
+    # Send confirmation
+    embed = discord.Embed(
+        title="Note Removed",
+        description=f"Removed note #{note_id} from {member.mention}.",
+        color=discord.Color.green()
+    )
+    
+    moderator = ctx.guild.get_member(int(removed["moderator_id"]))
+    moderator_name = moderator.name if moderator else "Unknown Moderator"
+    
+    embed.add_field(name="Original Content", value=removed["content"])
+    embed.add_field(name="Original Moderator", value=moderator_name)
+    
+    await ctx.send(embed=embed)
 
 @bot.command()
-async def withdraw(ctx, amount: str):
-    """Withdraw money from your bank"""
-    try:
-        # Get guild settings
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        if not guild_data.get("economy", {}).get("enabled", False):
-            await ctx.send("❌ Economy system is not enabled on this server.")
-            return
-        
-        currency_name = guild_data["economy"]["currency_name"]
-        currency_symbol = guild_data["economy"]["currency_symbol"]
-        
-        # Get user economy data
-        economy_data = await db.get_economy(ctx.author.id) or {}
-        
-        # If no economy data exists for the user, create it
-        if not economy_data:
-            starting_balance = guild_data["economy"]["starting_balance"]
-            economy_data = {
-                "_id": ctx.author.id,
-                "balance": starting_balance,
-                "bank": 0,
-                "last_daily": 0,
-                "last_work": 0,
-                "inventory": {}
-            }
-        
-        current_bank = economy_data.get("bank", 0)
-        
-        # Handle special amount values
-        if amount.lower() == "all":
-            withdraw_amount = current_bank
-        elif amount.lower() == "half":
-            withdraw_amount = current_bank // 2
-        else:
-            try:
-                withdraw_amount = int(amount)
-            except:
-                await ctx.send("❌ Please provide a valid amount.")
-                return
-        
-        if withdraw_amount <= 0:
-            await ctx.send("❌ You must withdraw a positive amount.")
-            return
-        
-        if withdraw_amount > current_bank:
-            await ctx.send("❌ You don't have that much money in your bank.")
-            return
-        
-        # Update balances
-        economy_data["bank"] = current_bank - withdraw_amount
-        economy_data["balance"] = economy_data.get("balance", 0) + withdraw_amount
-        
-        await db.update_economy(ctx.author.id, economy_data)
-        
-        # Create embed
-        embed = discord.Embed(
-            title="💸 Money Withdrawn",
-            description=f"You withdrew **{currency_symbol} {withdraw_amount:,}** from your bank account.",
-            color=SUCCESS_COLOR
-        )
-        
-        embed.add_field(
-            name="Wallet Balance",
-            value=f"{currency_symbol} {economy_data['balance']:,}",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="Bank Balance",
-            value=f"{currency_symbol} {economy_data['bank']:,}",
-            inline=True
-        )
-        
-        await ctx.send(embed=embed)
-        
-    except Exception as e:
-        await ctx.send(f"❌ Error withdrawing money: {e}")
-    
-    await db.increment_stats("commands_used")
-
-@bot.command()
-async def pay(ctx, member: discord.Member, amount: int):
-    """Pay another user from your wallet"""
-    if member == ctx.author:
-        await ctx.send("❌ You cannot pay yourself.")
-        return
+@commands.guild_only()
+@commands.has_permissions(manage_messages=True)
+async def purge(ctx, amount: int, *, user: discord.Member = None):
+    """Delete a specified number of messages from a channel"""
+    stats_manager.log_command("purge")
     
     if amount <= 0:
-        await ctx.send("❌ You must pay a positive amount.")
-        return
+        return await ctx.send("Please provide a positive number of messages to delete.")
+    
+    if amount > 500:
+        return await ctx.send("You can only delete up to 500 messages at once.")
+    
+    # Delete command message
+    await ctx.message.delete()
+    
+    # Filter messages by user if specified
+    def check(message):
+        return user is None or message.author == user
+    
+    # Delete messages
+    try:
+        deleted = await ctx.channel.purge(limit=amount, check=check)
+        
+        # Log the action
+        if user:
+            reason = f"Purged {len(deleted)} messages from {user.name}"
+        else:
+            reason = f"Purged {len(deleted)} messages"
+        
+        await log_action(ctx.guild, "Purge", user, ctx.author, reason, channel=ctx.channel)
+        
+        # Send confirmation (will delete after 5 seconds)
+        if user:
+            message = await ctx.send(f"✅ Deleted {len(deleted)} messages from {user.mention}.")
+        else:
+            message = await ctx.send(f"✅ Deleted {len(deleted)} messages.")
+        
+        await asyncio.sleep(5)
+        await message.delete()
+        
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to delete messages.")
+    except discord.HTTPException as e:
+        await ctx.send(f"Error deleting messages: {str(e)}")
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_channels=True)
+async def lock(ctx, channel: discord.TextChannel = None, *, reason="No reason provided"):
+    """Lock a channel, preventing users from sending messages"""
+    stats_manager.log_command("lock")
+    
+    channel = channel or ctx.channel
     
     try:
-        # Get guild settings
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        if not guild_data.get("economy", {}).get("enabled", False):
-            await ctx.send("❌ Economy system is not enabled on this server.")
-            return
+        # Get current overwrites to restore later
+        original_overwrites = dict(channel.overwrites)
         
-        currency_name = guild_data["economy"]["currency_name"]
-        currency_symbol = guild_data["economy"]["currency_symbol"]
+        # Lock the channel by denying send messages for @everyone
+        everyone_role = ctx.guild.default_role
+        overwrites = channel.overwrites_for(everyone_role)
+        overwrites.update(send_messages=False, send_messages_in_threads=False, create_public_threads=False, create_private_threads=False)
+        await channel.set_permissions(everyone_role, overwrite=overwrites)
         
-        # Get sender's economy data
-        sender_data = await db.get_economy(ctx.author.id) or {}
+        # Store the original permissions
+        lockdown_manager.add_lockdown(ctx.guild.id, channel.id, original_overwrites)
         
-        # If no economy data exists for the sender, create it
-        if not sender_data:
-            starting_balance = guild_data["economy"]["starting_balance"]
-            sender_data = {
-                "_id": ctx.author.id,
-                "balance": starting_balance,
-                "bank": 0,
-                "last_daily": 0,
-                "last_work": 0,
-                "inventory": {}
-            }
+        # Log the action
+        await log_action(ctx.guild, "Lock", moderator=ctx.author, reason=reason, channel=channel)
         
-        # Check if sender has enough money
-        if sender_data.get("balance", 0) < amount:
-            await ctx.send("❌ You don't have enough money in your wallet.")
-            return
-        
-        # Get recipient's economy data
-        recipient_data = await db.get_economy(member.id) or {}
-        
-        # If no economy data exists for the recipient, create it
-        if not recipient_data:
-            starting_balance = guild_data["economy"]["starting_balance"]
-            recipient_data = {
-                "_id": member.id,
-                "balance": starting_balance,
-                "bank": 0,
-                "last_daily": 0,
-                "last_work": 0,
-                "inventory": {}
-            }
-        
-        # Transfer money
-        sender_data["balance"] = sender_data.get("balance", 0) - amount
-        recipient_data["balance"] = recipient_data.get("balance", 0) + amount
-        
-        await db.update_economy(ctx.author.id, sender_data)
-        await db.update_economy(member.id, recipient_data)
-        
-        # Create embed
+        # Send confirmation
         embed = discord.Embed(
-            title="💸 Money Transferred",
-            description=f"You paid **{currency_symbol} {amount:,}** to {member.mention}.",
-            color=SUCCESS_COLOR
+            title="Channel Locked",
+            description=f"{channel.mention} has been locked.",
+            color=discord.Color.red(),
+            timestamp=datetime.datetime.utcnow()
+        )
+        embed.add_field(name="Reason", value=reason)
+        embed.add_field(name="Locked by", value=ctx.author.mention)
+        
+        await channel.send(embed=embed)
+        if channel != ctx.channel:
+            await ctx.send(f"Channel {channel.mention} has been locked.")
+        
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to manage channel permissions.")
+    except Exception as e:
+        await ctx.send(f"An error occurred: {str(e)}")
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_channels=True)
+async def unlock(ctx, channel: discord.TextChannel = None, *, reason="No reason provided"):
+    """Unlock a previously locked channel"""
+    stats_manager.log_command("unlock")
+    
+    channel = channel or ctx.channel
+    
+    try:
+        # Get the original overwrites
+        lockdown_data = lockdown_manager.get_lockdown(ctx.guild.id, channel.id)
+        
+        if not lockdown_data:
+            return await ctx.send(f"{channel.mention} is not locked or was not locked using the bot.")
+        
+        # Restore original permissions
+        for role_id, overwrite_data in lockdown_data["overwrites"].items():
+            role = ctx.guild.get_role(int(role_id))
+            if role:
+                overwrites = channel.overwrites_for(role)
+                overwrites.update(
+                    send_messages=overwrite_data["send_messages"],
+                    send_messages_in_threads=overwrite_data["send_messages_in_threads"],
+                    create_public_threads=overwrite_data["create_public_threads"],
+                    create_private_threads=overwrite_data["create_private_threads"]
+                )
+                await channel.set_permissions(role, overwrite=overwrites)
+        
+        # Remove from lockdown database
+        lockdown_manager.remove_lockdown(ctx.guild.id, channel.id)
+        
+        # Log the action
+        await log_action(ctx.guild, "Unlock", moderator=ctx.author, reason=reason, channel=channel)
+        
+        # Send confirmation
+        embed = discord.Embed(
+            title="Channel Unlocked",
+            description=f"{channel.mention} has been unlocked.",
+            color=discord.Color.green(),
+            timestamp=datetime.datetime.utcnow()
+        )
+        embed.add_field(name="Reason", value=reason)
+        embed.add_field(name="Unlocked by", value=ctx.author.mention)
+        
+        await channel.send(embed=embed)
+        if channel != ctx.channel:
+            await ctx.send(f"Channel {channel.mention} has been unlocked.")
+        
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to manage channel permissions.")
+    except Exception as e:
+        await ctx.send(f"An error occurred: {str(e)}")
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_channels=True)
+async def slowmode(ctx, seconds: int, channel: discord.TextChannel = None, *, reason="No reason provided"):
+    """Set slowmode for a channel"""
+    stats_manager.log_command("slowmode")
+    
+    channel = channel or ctx.channel
+    
+    if seconds < 0:
+        return await ctx.send("Slowmode seconds cannot be negative.")
+    
+    if seconds > 21600:  # Discord's maximum is 6 hours (21600 seconds)
+        return await ctx.send("Slowmode cannot exceed 6 hours (21600 seconds).")
+    
+    try:
+        await channel.edit(slowmode_delay=seconds)
+        
+        # Log the action
+        await log_action(
+            ctx.guild, 
+            "Slowmode", 
+            moderator=ctx.author, 
+            reason=reason,
+            channel=channel,
+            duration=f"{seconds} seconds" if seconds > 0 else "Disabled"
         )
         
-        embed.add_field(
-            name="Your New Balance",
-            value=f"{currency_symbol} {sender_data['balance']:,}",
-            inline=False
-        )
+        # Send confirmation
+        if seconds == 0:
+            embed = discord.Embed(
+                title="Slowmode Disabled",
+                description=f"Slowmode has been disabled in {channel.mention}.",
+                color=discord.Color.green()
+            )
+        else:
+            embed = discord.Embed(
+                title="Slowmode Enabled",
+                description=f"Slowmode has been set to {seconds} seconds in {channel.mention}.",
+                color=discord.Color.blue()
+            )
+        
+        embed.add_field(name="Reason", value=reason)
         
         await ctx.send(embed=embed)
         
-        # Send notification to recipient
-        try:
-            recipient_embed = discord.Embed(
-                title="💰 Money Received",
-                description=f"You received **{currency_symbol} {amount:,}** from {ctx.author.mention}.",
-                color=SUCCESS_COLOR
-            )
-            
-            recipient_embed.add_field(
-                name="Your New Balance",
-                value=f"{currency_symbol} {recipient_data['balance']:,}",
-                inline=False
-            )
-            
-            await member.send(embed=recipient_embed)
-        except:
-            pass  # Recipient might have DMs disabled
-        
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to edit the channel.")
     except Exception as e:
-        await ctx.send(f"❌ Error transferring money: {e}")
-    
-    await db.increment_stats("commands_used")
-    await db.increment_stats("money_transferred")
+        await ctx.send(f"An error occurred: {str(e)}")
 
 @bot.command()
-async def shop(ctx):
-    """View the server shop"""
+@commands.guild_only()
+@commands.has_permissions(manage_guild=True)
+async def lockserver(ctx, duration: Optional[str] = None, *, reason="No reason provided"):
+    """Lock down the entire server by raising verification level"""
+    stats_manager.log_command("lockserver")
+    
     try:
-        # Get guild settings
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        if not guild_data.get("economy", {}).get("enabled", False):
-            await ctx.send("❌ Economy system is not enabled on this server.")
-            return
+        # Store current verification level
+        previous_verification = ctx.guild.verification_level
         
-        currency_name = guild_data["economy"]["currency_name"]
-        currency_symbol = guild_data["economy"]["currency_symbol"]
+        # Set verification to highest
+        await ctx.guild.edit(verification_level=discord.VerificationLevel.highest)
         
-        # Default shop items if none defined
-        default_shop = [
-            {"id": "role_color", "name": "Custom Role Color", "description": "Change your role color", "price": 500, "premium": False},
-            {"id": "rename", "name": "Nickname Change", "description": "Change your nickname", "price": 200, "premium": False},
-            {"id": "vip_role", "name": "VIP Role", "description": "Get a special VIP role", "price": 2000, "premium": False},
-            {"id": "lootbox", "name": "Lootbox", "description": "Get random rewards", "price": 300, "premium": False},
-            {"id": "xp_boost", "name": "XP Boost (1 hour)", "description": "Get 2x XP for 1 hour", "price": 1000, "premium": True},
-            {"id": "money_boost", "name": "Money Boost (1 hour)", "description": "Get 2x money from work for 1 hour", "price": 1500, "premium": True}
-        ]
+        if duration:
+            try:
+                duration_seconds = parse_time(duration)
+                if duration_seconds <= 0:
+                    return await ctx.send("Duration must be a positive number.")
+                
+                end_time = time.time() + duration_seconds
+                human_duration = format_time_delta(duration_seconds)
+                
+                # Store lockdown info
+                server_lockdowns[ctx.guild.id] = {
+                    "previous_verification": previous_verification,
+                    "end_time": end_time,
+                    "moderator": ctx.author.id,
+                    "reason": reason
+                }
+                
+                # Log the action
+                await log_action(
+                    ctx.guild, 
+                    "Server Lockdown", 
+                    moderator=ctx.author, 
+                    reason=reason,
+                    duration=human_duration
+                )
+                
+                # Send confirmation
+                embed = discord.Embed(
+                    title="Server Locked Down",
+                    description=f"Server has been locked down for {human_duration}.",
+                    color=discord.Color.red()
+                )
+                embed.add_field(name="Reason", value=reason)
+                embed.add_field(name="Expires", value=f"<t:{int(end_time)}:F>")
+                
+                await ctx.send(embed=embed)
+                
+            except ValueError as e:
+                await ctx.send(str(e))
+                # Revert verification level
+                await ctx.guild.edit(verification_level=previous_verification)
+                return
+        else:
+            # Log the action
+            await log_action(
+                ctx.guild, 
+                "Server Lockdown", 
+                moderator=ctx.author, 
+                reason=reason
+            )
+            
+            # Send confirmation
+            embed = discord.Embed(
+                title="Server Locked Down",
+                description="Server has been locked down indefinitely.",
+                color=discord.Color.red()
+            )
+            embed.add_field(name="Reason", value=reason)
+            
+            await ctx.send(embed=embed)
         
-        # Get shop items from guild settings or use default
-        shop_items = guild_data.get("shop_items", default_shop)
-        is_premium = await db.is_premium(ctx.guild.id)
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to edit the server.")
+    except Exception as e:
+        await ctx.send(f"An error occurred: {str(e)}")
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_guild=True)
+async def unlockserver(ctx, *, reason="No reason provided"):
+    """Unlock the server by restoring previous verification level"""
+    stats_manager.log_command("unlockserver")
+    
+    try:
+        # Check if server is in timed lockdown
+        if ctx.guild.id in server_lockdowns:
+            previous_verification = server_lockdowns[ctx.guild.id]["previous_verification"]
+            del server_lockdowns[ctx.guild.id]
+        else:
+            # If not in a timed lockdown, lower to low verification
+            previous_verification = discord.VerificationLevel.low
         
-        # Create embed
-        embed = discord.Embed(
-            title=f"{ctx.guild.name}'s Shop",
-            description=f"Use `!buy <item_id>` to purchase an item.",
-            color=EMBED_COLOR
+        # Restore verification level
+        await ctx.guild.edit(verification_level=previous_verification)
+        
+        # Log the action
+        await log_action(
+            ctx.guild, 
+            "Server Unlock", 
+            moderator=ctx.author, 
+            reason=reason
         )
         
-        # List shop items
-        for item in shop_items:
-            if item.get("premium", False) and not is_premium:
-                continue  # Skip premium items on non-premium servers
-            
-            embed.add_field(
-                name=f"{item['name']} - {currency_symbol} {item['price']:,}",
-                value=f"**ID:** `{item['id']}`\n**Description:** {item['description']}" + 
-                      (f"\n⭐ **Premium Item**" if item.get("premium", False) else ""),
-                inline=False
-            )
-        
-        if not embed.fields:
-            embed.description = "No items available in the shop."
-        
-        # Add premium note if not premium
-        if not is_premium:
-            embed.set_footer(text="Upgrade to premium to unlock more shop items!")
+        # Send confirmation
+        embed = discord.Embed(
+            title="Server Unlocked",
+            description="Server verification level has been restored.",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Reason", value=reason)
         
         await ctx.send(embed=embed)
         
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to edit the server.")
     except Exception as e:
-        await ctx.send(f"❌ Error displaying shop: {e}")
-    
-    await db.increment_stats("commands_used")
+        await ctx.send(f"An error occurred: {str(e)}")
 
 @bot.command()
-async def buy(ctx, item_id: str):
-    """Buy an item from the shop"""
+@commands.guild_only()
+@commands.has_permissions(manage_messages=True)
+async def addword(ctx, word, *, reason="No reason provided"):
+    """Add a word to the server's banned words filter"""
+    stats_manager.log_command("addword")
+    
+    # Add the word to the filter
+    if filter_manager.add_word(ctx.guild.id, word, "banned_words"):
+        # Log the action
+        await log_action(
+            ctx.guild, 
+            "Add Banned Word", 
+            moderator=ctx.author, 
+            reason=reason
+        )
+        
+        # Send confirmation
+        embed = discord.Embed(
+            title="Banned Word Added",
+            description=f"Added `{word}` to the server's banned words list.",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Reason", value=reason)
+        
+        await ctx.send(embed=embed)
+    else:
+        await ctx.send(f"`{word}` is already in the banned words list.")
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_messages=True)
+async def removeword(ctx, word):
+    """Remove a word from the server's banned words filter"""
+    stats_manager.log_command("removeword")
+    
+    # Remove the word from the filter
+    if filter_manager.remove_word(ctx.guild.id, word, "banned_words"):
+        # Log the action
+        await log_action(
+            ctx.guild, 
+            "Remove Banned Word", 
+            moderator=ctx.author, 
+            reason=f"Removed '{word}' from banned words list"
+        )
+        
+        # Send confirmation
+        embed = discord.Embed(
+            title="Banned Word Removed",
+            description=f"Removed `{word}` from the server's banned words list.",
+            color=discord.Color.green()
+        )
+        
+        await ctx.send(embed=embed)
+    else:
+        await ctx.send(f"`{word}` is not in the banned words list.")
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_messages=True)
+async def bannedwords(ctx):
+    """List all banned words in the server"""
+    stats_manager.log_command("bannedwords")
+    
+    # Get the list of banned words
+    words = filter_manager.get_words(ctx.guild.id, "banned_words")
+    
+    if not words:
+        return await ctx.send("There are no banned words in this server.")
+    
+    # Create paginated list
+    pages = []
+    current_page = []
+    
+    for i, word in enumerate(words, 1):
+        current_page.append(f"{i}. `{word}`")
+        
+        if i % 15 == 0 or i == len(words):
+            pages.append("\n".join(current_page))
+            current_page = []
+    
+    # Send paginated embeds
+    await send_paginated_embed(ctx, "Banned Words List", pages)
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_messages=True)
+async def addlink(ctx, link, *, reason="No reason provided"):
+    """Add a link to the server's banned links filter"""
+    stats_manager.log_command("addlink")
+    
+    # Add the link to the filter
+    if filter_manager.add_word(ctx.guild.id, link, "banned_links"):
+        # Log the action
+        await log_action(
+            ctx.guild, 
+            "Add Banned Link", 
+            moderator=ctx.author, 
+            reason=reason
+        )
+        
+        # Send confirmation
+        embed = discord.Embed(
+            title="Banned Link Added",
+            description=f"Added `{link}` to the server's banned links list.",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Reason", value=reason)
+        
+        await ctx.send(embed=embed)
+    else:
+        await ctx.send(f"`{link}` is already in the banned links list.")
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_messages=True)
+async def removelink(ctx, link):
+    """Remove a link from the server's banned links filter"""
+    stats_manager.log_command("removelink")
+    
+    # Remove the link from the filter
+    if filter_manager.remove_word(ctx.guild.id, link, "banned_links"):
+        # Log the action
+        await log_action(
+            ctx.guild, 
+            "Remove Banned Link", 
+            moderator=ctx.author, 
+            reason=f"Removed '{link}' from banned links list"
+        )
+        
+        # Send confirmation
+        embed = discord.Embed(
+            title="Banned Link Removed",
+            description=f"Removed `{link}` from the server's banned links list.",
+            color=discord.Color.green()
+        )
+        
+        await ctx.send(embed=embed)
+    else:
+        await ctx.send(f"`{link}` is not in the banned links list.")
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_messages=True)
+async def bannedlinks(ctx):
+    """List all banned links in the server"""
+    stats_manager.log_command("bannedlinks")
+    
+    # Get the list of banned links
+    links = filter_manager.get_words(ctx.guild.id, "banned_links")
+    
+    if not links:
+        return await ctx.send("There are no banned links in this server.")
+    
+    # Create paginated list
+    pages = []
+    current_page = []
+    
+    for i, link in enumerate(links, 1):
+        current_page.append(f"{i}. `{link}`")
+        
+        if i % 15 == 0 or i == len(links):
+            pages.append("\n".join(current_page))
+            current_page = []
+    
+    # Send paginated embeds
+    await send_paginated_embed(ctx, "Banned Links List", pages)
+
+# Role menu commands
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_roles=True)
+async def createrole(ctx, name, color: Optional[discord.Color] = discord.Color.default(), *, reason="No reason provided"):
+    """Create a new role in the server"""
+    stats_manager.log_command("createrole")
+    
     try:
-        # Get guild settings
-        guild_data = await db.get_guild(ctx.guild.id) or {}
-        if not guild_data.get("economy", {}).get("enabled", False):
-            await ctx.send("❌ Economy system is not enabled on this server.")
-            return
+        # Create the role
+        role = await ctx.guild.create_role(name=name, color=color, reason=f"{ctx.author}: {reason}")
         
-        currency_name = guild_data["economy"]["currency_name"]
-        currency_symbol = guild_data["economy"]["currency_symbol"]
+        # Log the action
+        await log_action(
+            ctx.guild, 
+            "Create Role", 
+            moderator=ctx.author, 
+            reason=reason
+        )
         
-        # Default shop items if none defined
-        default_shop = [
-            {"id": "role_color", "name": "Custom Role Color", "description": "Change your role color", "price": 500, "premium": False},
-            {"id": "rename", "name": "Nickname Change", "description": "Change your nickname", "price": 200, "premium": False},
-            {"id": "vip_role", "name": "VIP Role", "description": "Get a special VIP role", "price": 2000, "premium": False},
-            {"id": "lootbox", "name": "Lootbox", "description": "Get random rewards", "price": 300, "premium": False},
-            {"id": "xp_boost", "name": "XP Boost (1 hour)", "description": "Get 2x XP for 1 hour", "price": 1000, "premium": True},
-            {"id": "money_boost", "name": "Money Boost (1 hour)", "description": "Get 2x money from work for 1 hour", "price": 1500, "premium": True}
-        ]
+        # Send confirmation
+        embed = discord.Embed(
+            title="Role Created",
+            description=f"Created role {role.mention}.",
+            color=role.color
+        )
+        embed.add_field(name="Name", value=role.name)
+        embed.add_field(name="Color", value=str(role.color))
+        embed.add_field(name="ID", value=role.id)
         
-        # Get shop items from guild settings or use default
-        shop_items = guild_data.get("shop_items", default_shop)
-        is_premium = await db.is_premium(ctx.guild.id)
+        await ctx.send(embed=embed)
         
-        # Find the item
-        item = None
-        for shop_item in shop_items:
-            if shop_item["id"] == item_id:
-                item = shop_item
-                break
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to manage roles.")
+    except Exception as e:
+        await ctx.send(f"An error occurred: {str(e)}")
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_roles=True)
+async def addrole(ctx, member: discord.Member, role: discord.Role, *, reason="No reason provided"):
+    """Add a role to a member"""
+    stats_manager.log_command("addrole")
+    
+    if ctx.author.top_role <= role and not ctx.author.guild_permissions.administrator:
+        return await ctx.send("You cannot assign a role that is higher than or equal to your highest role.")
+    
+    try:
+        # Add the role
+        await member.add_roles(role, reason=f"{ctx.author}: {reason}")
         
-        if not item:
-            await ctx.send("❌ Item not found in shop. Use `!shop` to see available items.")
-            return
+        # Log the action
+        await log_action(
+            ctx.guild, 
+            "Add Role", 
+            user=member,
+            moderator=ctx.author, 
+            reason=f"Added role {role.name}: {reason}"
+        )
         
-        # Check if premium item on non-premium server
-        if item.get("premium", False) and not is_premium:
-            await ctx.send("⭐ This is a premium item and is only available on premium servers.")
-            return
+        # Send confirmation
+        embed = discord.Embed(
+            title="Role Added",
+            description=f"Added role {role.mention} to {member.mention}.",
+            color=role.color
+        )
+        embed.add_field(name="Reason", value=reason)
         
-        # Get user economy data
-        economy_data = await db.get_economy(ctx.author.id) or {}
+        await ctx.send(embed=embed)
         
-        # If no economy data exists for the user, create it
-        if not economy_data:
-            starting_balance = guild_data["economy"]["starting_balance"]
-            economy_data = {
-                "_id": ctx.author.id,
-                "balance": starting_balance,
-                "bank": 0,
-                "last_daily": 0,
-                "last_work": 0,
-                "inventory": {}
-            }
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to manage roles.")
+    except Exception as e:
+        await ctx.send(f"An error occurred: {str(e)}")
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_roles=True)
+async def removerole(ctx, member: discord.Member, role: discord.Role, *, reason="No reason provided"):
+    """Remove a role from a member"""
+    stats_manager.log_command("removerole")
+    
+    if ctx.author.top_role <= role and not ctx.author.guild_permissions.administrator:
+        return await ctx.send("You cannot remove a role that is higher than or equal to your highest role.")
+    
+    if role not in member.roles:
+        return await ctx.send(f"{member.mention} does not have the role {role.mention}.")
+    
+    try:
+        # Remove the role
+        await member.remove_roles(role, reason=f"{ctx.author}: {reason}")
         
-        # Check if user has enough money
-        if economy_data.get("balance", 0) < item["price"]:
-            await ctx.send(f"❌ You don't have enough {currency_name}. You need {currency_symbol} {item['price']:,}.")
-            return
+        # Log the action
+        await log_action(
+            ctx.guild, 
+            "Remove Role", 
+            user=member,
+            moderator=ctx.author, 
+            reason=f"Removed role {role.name}: {reason}"
+        )
         
-        # Process purchase based on item type
-        if item["id"] == "role_color":
-            embed = discord.Embed(
-                title="Role Color Purchase",
-                description="Please enter a hex color code (e.g., #FF0000 for red):",
-                color=EMBED_COLOR
-            )
-            await ctx.send(embed=embed)
-            
-            try:
-                msg = await bot.wait_for(
-                    "message",
-                    check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-                    timeout=60.0
-                )
-                
-                color_hex = msg.content.strip()
-                if not re.match(r'^#(?:[0-9a-fA-F]{3}){1,2}$', color_hex):
-                    await ctx.send("❌ Invalid hex color code. Purchase cancelled.")
-                    return
-                
-                # Convert hex to discord.Color
-                color = discord.Color(int(color_hex[1:], 16))
-                
-                # Check if user already has a colored role
-                colored_role = None
-                for role in ctx.author.roles:
-                    if role.name == f"{ctx.author.name}'s Color":
-                        colored_role = role
-                        break
-                
-                if colored_role:
-                    await colored_role.edit(color=color)
-                else:
-                    # Create new role
-                    colored_role = await ctx.guild.create_role(
-                        name=f"{ctx.author.name}'s Color",
-                        color=color,
-                        reason=f"Color role purchase by {ctx.author}"
-                    )
-                    
-                    # Add role to user
-                    await ctx.author.add_roles(colored_role)
-                    
-                    # Move role position to just above the user's highest role
-                    highest_role_pos = max([role.position for role in ctx.author.roles if role.id != colored_role.id])
-                    await colored_role.edit(position=highest_role_pos + 1)
-                
-                success_message = f"Changed your role color to {color_hex}!"
-                
-            except asyncio.TimeoutError:
-                await ctx.send("❌ You took too long to respond. Purchase cancelled.")
-                return
-                
-        elif item["id"] == "rename":
-            embed = discord.Embed(
-                title="Nickname Purchase",
-                description="Please enter your new nickname:",
-                color=EMBED_COLOR
-            )
-            await ctx.send(embed=embed)
-            
-            try:
-                msg = await bot.wait_for(
-                    "message",
-                    check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-                    timeout=60.0
-                )
-                
-                new_nick = msg.content.strip()
-                if len(new_nick) > 32:
-                    await ctx.send("❌ Nickname cannot be longer than 32 characters. Purchase cancelled.")
-                    return
-                
-                await ctx.author.edit(nick=new_nick)
-                success_message = f"Changed your nickname to {new_nick}!"
-                
-            except asyncio.TimeoutError:
-                await ctx.send("❌ You took too long to respond. Purchase cancelled.")
-                return
-                
-        elif item["id"] == "vip_role":
-            # Check if VIP role exists
-            vip_role = discord.utils.get(ctx.guild.roles, name="VIP")
-            
-            if not vip_role:
-                # Create VIP role
-                vip_role = await ctx.guild.create_role(</h1>
+        # Send confirmation
+        embed = discord.Embed(
+            title="Role Removed",
+            description=f"Removed role {role.mention} from {member.mention}.",
+            color=role.color
+        )
+        embed.add_field(name="Reason", value=reason)
+        
+        await ctx.send(embed=embed)
+        
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to manage roles.")
+    except Exception as e:
+        await ctx.send(f"An error occurred: {str(e)}")
+
+@bot.command()
+@commands.guild_only()
+@commands.has_permissions(manage_roles=True)
+async def createrolemenu(ctx, channel: Optional[discord.TextChannel] = None, *, title_and_description):
+    """Create a role menu in a channel
+    Format: !createrolemenu #channel Title |(</h1>
 </body>
 </html>
