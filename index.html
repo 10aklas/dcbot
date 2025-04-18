@@ -37,7 +37,7 @@ load_dotenv()
 
 # Bot configuration
 BOT_PREFIX = os.getenv("BOT_PREFIX", "!")
-TOKEN = os.getenv("MTM2MDcwNDQ2ODU4ODY5NTYxMw.GAcs2K0L0IOHVN0QzpBVBf85GRUeV6T5A")
+TOKEN = os.getenv("MTM2MDcwNDQ2ODU4ODY5NTYxMw.GA0q4z.vqPWWXTcs2K0L0IOHVN0QzpBVBf85GRUeV6T5A")
 
 # Create the data directory if it doesn't exist
 if not os.path.exists("data"):
@@ -2345,6 +2345,8 @@ async def userinfo(ctx, member: discord.Member = None):
     
     await ctx.send(embed=embed)
 
+bot.remove_command('help')
+
 @bot.command()
 async def help(ctx):
     """Display help information about the bot commands"""
@@ -2360,6 +2362,7 @@ async def help(ctx):
     embed.add_field(name="!userinfo [member]", value="Display information about a user (or yourself if no user is specified)", inline=False)
     embed.add_field(name="!roles", value="Display all roles in the server", inline=False)
     embed.add_field(name="!purge [amount]", value="Delete a specified number of messages (default: 5)", inline=False)
+    
     
     await ctx.send(embed=embed)
 
