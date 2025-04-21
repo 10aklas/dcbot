@@ -6,2423 +6,1141 @@
     <title>Document</title>
 </head>
 <body>
-    <h1># Guardian Bot - Professional Discord Moderation Bot
-# A comprehensive Discord bot for server management and moderation using discord.py
-
-import discord
-from discord.ext import commands, tasks
-import asyncio
+    <h1>import socket
+import threading
+import tkinter as tk
+from tkinter import scrolledtext, ttk
+import random
 import json
 import os
-import datetime
-import re
-from typing import Optional, Union, List, Dict, Any
-import logging
-from collections import defaultdict, deque
-from dotenv import load_dotenv
+import pyaudio
+import time
+import struct
+from tkinter import messagebox
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("bot.log"),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger("guardian_bot")
+# Network settings
+HOST = '0.0.0.0'  # Server will listen on all interfaces
+PORT = 5555       # Text chat port
+VOICE_PORT = 5556 # Voice chat port
+CHUNK = 1024      # Audio chunk size
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 44100
 
-# Load environment variables
-load_dotenv()
+# Generate a random username
+ADJECTIVES = ["Happy", "Sunny", "Brave", "Bright", "Cool", "Wild", "Smart", "Swift", "Epic", "Calm"]
+NOUNS = ["Tiger", "Dragon", "Phoenix", "Warrior", "Shark", "Eagle", "Wolf", "Bear", "Ninja", "Wizard"]
+COLORS = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange", "Pink", "Teal", "Gold", "Silver"]
 
-# Bot configuration
-BOT_PREFIX = os.getenv("BOT_PREFIX", "!")
-TOKEN = os.getenv("MTM2MDcwNDQ2ODU4ODY5NTYxMw.GA0q4z.vqPWWXTcs2K0L0IOHVN0QzpBVBf85GRUeV6T5A")
+def generate_username():
+    return f"{random.choice(COLORS)}{random.choice(ADJECTIVES)}{random.choice(NOUNS)}"
 
-# Create the data directory if it doesn't exist
-if not os.path.exists("data"):
-    os.makedirs("data")
+# The main issue is likely in the VoiceClient class where audio processing happens
+# Let's enhance the voice functionality to make it work properly:
 
-# Define intents for the bot
-intents = discord.Intents.default()
-intents.members = True
-intents.message_content = True
-intents.guilds = True
-intents.bans = True
-
-# Initialize the bot with command prefix and intents
-bot = commands.Bot(command_prefix=lambda _, message: get_guild_prefix(message), intents=intents, case_insensitive=True)
-
-# Utility functions for database management
-class Database:
-    @staticmethod
-    def get_guild_data(guild_id: int, default=None) -> dict:
-        """Get guild-specific data from the database."""
-        if default is None:
-            default = {
-                "prefix": BOT_PREFIX,
-                "mod_log_channel": None,
-                "welcome_channel": None,
-                "welcome_message": "Welcome to the server, {user}!",
-                "leave_message": "Goodbye, {user}!",
-                "mute_role": None,
-                "autorole": None,
-                "automod": {
-                    "enabled": False,
-                    "banned_words": [],
-                    "spam_detection": False,
-                    "mention_limit": 5,
-                },
-                "anti_raid": {
-                    "enabled": False,
-                    "threshold": 10,
-                    "active": False,
-                    "verification_role": None
-                }
-            }
+class ChatClient:
+    def __init__(self, host, port, username):
+        self.host = host
+        self.port = port
+        self.username = username
+        self.socket = None
+        self.connected = False
         
-        file_path = f"data/guild_{guild_id}.json"
-        
-        if os.path.exists(file_path):
-            try:
-                with open(file_path, "r") as f:
-                    data = json.load(f)
-                # Update with any missing default fields
-                for key, value in default.items():
-                    if key not in data:
-                        data[key] = value
-                return data
-            except Exception as e:
-                logger.error(f"Error loading guild data: {e}")
-                return default
-        else:
-            # Create default settings file
-            Database.save_guild_data(guild_id, default)
-            return default
-    
-    @staticmethod
-    def save_guild_data(guild_id: int, data: dict) -> bool:
-        """Save guild-specific data to the database."""
-        file_path = f"data/guild_{guild_id}.json"
-        
+    def connect(self):
         try:
-            with open(file_path, "w") as f:
-                json.dump(data, f, indent=4)
-            return True
-        except Exception as e:
-            logger.error(f"Error saving guild data: {e}")
-            return False
-    
-    @staticmethod
-    def get_modlogs(guild_id: int) -> list:
-        """Get moderation logs for a guild."""
-        file_path = f"data/modlogs_{guild_id}.json"
-        
-        if os.path.exists(file_path):
-            try:
-                with open(file_path, "r") as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Error loading modlogs: {e}")
-                return []
-        else:
-            return []
-    
-    @staticmethod
-    def add_modlog(guild_id: int, log_entry: dict) -> int:
-        """Add a moderation log entry for a guild."""
-        logs = Database.get_modlogs(guild_id)
-        
-        # Assign a case number
-        case_number = len(logs) + 1
-        log_entry["case_number"] = case_number
-        
-        logs.append(log_entry)
-        
-        file_path = f"data/modlogs_{guild_id}.json"
-        try:
-            with open(file_path, "w") as f:
-                json.dump(logs, f, indent=4)
-            return case_number
-        except Exception as e:
-            logger.error(f"Error saving modlogs: {e}")
-            return -1
-    
-    @staticmethod
-    def get_warnings(guild_id: int, user_id: int = None) -> Union[dict, list]:
-        """Get warnings for a guild or specific user."""
-        file_path = f"data/warnings_{guild_id}.json"
-        
-        if os.path.exists(file_path):
-            try:
-                with open(file_path, "r") as f:
-                    warnings = json.load(f)
-                
-                if user_id is not None:
-                    return warnings.get(str(user_id), [])
-                    
-                return warnings
-            except Exception as e:
-                logger.error(f"Error loading warnings: {e}")
-                return {} if user_id is None else []
-        else:
-            return {} if user_id is None else []
-    
-    @staticmethod
-    def add_warning(guild_id: int, user_id: int, moderator_id: int, reason: str) -> int:
-        """Add a warning for a user in a guild."""
-        warnings = Database.get_warnings(guild_id)
-        
-        user_id_str = str(user_id)
-        if user_id_str not in warnings:
-            warnings[user_id_str] = []
-        
-        warning = {
-            "moderator_id": moderator_id,
-            "reason": reason,
-            "timestamp": datetime.datetime.now().timestamp()
-        }
-        
-        warnings[user_id_str].append(warning)
-        
-        file_path = f"data/warnings_{guild_id}.json"
-        try:
-            with open(file_path, "w") as f:
-                json.dump(warnings, f, indent=4)
-            return len(warnings[user_id_str])
-        except Exception as e:
-            logger.error(f"Error saving warnings: {e}")
-            return -1
-    
-    @staticmethod
-    def remove_warning(guild_id: int, user_id: int, warning_index: int = None) -> bool:
-        """Remove a warning or all warnings for a user in a guild."""
-        warnings = Database.get_warnings(guild_id)
-        user_id_str = str(user_id)
-        
-        if user_id_str not in warnings:
-            return False
-        
-        if warning_index is None:
-            # Remove all warnings
-            del warnings[user_id_str]
-        else:
-            # Remove specific warning
-            if 0 <= warning_index < len(warnings[user_id_str]):
-                warnings[user_id_str].pop(warning_index)
-                if not warnings[user_id_str]:
-                    del warnings[user_id_str]
-            else:
-                return False
-        
-        file_path = f"data/warnings_{guild_id}.json"
-        try:
-            with open(file_path, "w") as f:
-                json.dump(warnings, f, indent=4)
-            return True
-        except Exception as e:
-            logger.error(f"Error saving warnings: {e}")
-            return False
-
-    @staticmethod
-    def get_temp_actions(action_type: str = None) -> dict:
-        """Get temporary actions (mutes, bans) from the database."""
-        file_path = f"data/temp_actions.json"
-        
-        if os.path.exists(file_path):
-            try:
-                with open(file_path, "r") as f:
-                    actions = json.load(f)
-                
-                if action_type:
-                    return {k: v for k, v in actions.items() if v.get("type") == action_type}
-                    
-                return actions
-            except Exception as e:
-                logger.error(f"Error loading temp actions: {e}")
-                return {}
-        else:
-            return {}
-    
-    @staticmethod
-    def add_temp_action(action_id: str, action_data: dict) -> bool:
-        """Add a temporary action to the database."""
-        actions = Database.get_temp_actions()
-        
-        actions[action_id] = action_data
-        
-        file_path = f"data/temp_actions.json"
-        try:
-            with open(file_path, "w") as f:
-                json.dump(actions, f, indent=4)
-            return True
-        except Exception as e:
-            logger.error(f"Error saving temp actions: {e}")
-            return False
-    
-    @staticmethod
-    def remove_temp_action(action_id: str) -> bool:
-        """Remove a temporary action from the database."""
-        actions = Database.get_temp_actions()
-        
-        if action_id in actions:
-            del actions[action_id]
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.connect((self.host, self.port))
             
-            file_path = f"data/temp_actions.json"
-            try:
-                with open(file_path, "w") as f:
-                    json.dump(actions, f, indent=4)
-                return True
-            except Exception as e:
-                logger.error(f"Error saving temp actions: {e}")
-                return False
-        
-        return False
-
-# Helper function to get guild prefix
-def get_guild_prefix(message):
-    if message.guild:
-        guild_data = Database.get_guild_data(message.guild.id)
-        return guild_data.get("prefix", BOT_PREFIX)
-    return BOT_PREFIX
-
-# Utility class for moderation
-class ModUtils:
-    @staticmethod
-    async def create_mod_log(guild: discord.Guild, moderator: discord.Member, target: Union[discord.Member, discord.User], 
-                            action: str, reason: str, duration: str = None) -> int:
-        """Create a moderation log entry and send to the mod log channel if configured."""
-        # Create log entry
-        log_entry = {
-            "moderator_id": moderator.id,
-            "moderator_name": str(moderator),
-            "target_id": target.id,
-            "target_name": str(target),
-            "action": action,
-            "reason": reason,
-            "timestamp": datetime.datetime.now().timestamp()
-        }
-        
-        if duration:
-            log_entry["duration"] = duration
-        
-        # Add to database
-        case_number = Database.add_modlog(guild.id, log_entry)
-        
-        # Get mod log channel
-        guild_data = Database.get_guild_data(guild.id)
-        mod_log_channel_id = guild_data.get("mod_log_channel")
-        
-        if mod_log_channel_id:
-            try:
-                channel = await bot.fetch_channel(mod_log_channel_id)
-                
-                # Create embed
-                embed = discord.Embed(
-                    title=f"Case #{case_number} | {action}",
-                    color=ModUtils.get_action_color(action),
-                    timestamp=datetime.datetime.now()
-                )
-                
-                embed.add_field(name="User", value=f"{target} ({target.id})", inline=True)
-                embed.add_field(name="Moderator", value=f"{moderator} ({moderator.id})", inline=True)
-                embed.add_field(name="Reason", value=reason or "No reason provided", inline=False)
-                
-                if duration:
-                    embed.add_field(name="Duration", value=duration, inline=True)
-                
-                await channel.send(embed=embed)
-            except Exception as e:
-                logger.error(f"Error sending to mod log channel: {e}")
-        
-        return case_number
-    
-    @staticmethod
-    def get_action_color(action: str) -> discord.Color:
-        """Get color based on action type."""
-        colors = {
-            "BAN": discord.Color.red(),
-            "KICK": discord.Color.orange(),
-            "MUTE": discord.Color.gold(),
-            "WARN": discord.Color.gold(),
-            "TIMEOUT": discord.Color.purple(),
-            "UNBAN": discord.Color.green(),
-            "UNMUTE": discord.Color.green(),
-            "UNTIMEOUT": discord.Color.teal()
-        }
-        
-        return colors.get(action, discord.Color.blue())
-    
-    @staticmethod
-    def has_mod_permission(member: discord.Member) -> bool:
-        """Check if a member has moderation permissions."""
-        return member.guild_permissions.kick_members or member.guild_permissions.ban_members or member.is_owner()
-    
-    @staticmethod
-    def check_hierarchy(mod: discord.Member, target: discord.Member) -> bool:
-        """Check if moderator's highest role is higher than target's highest role."""
-        return mod.top_role > target.top_role or mod.guild.owner_id == mod.id
-
-# Anti-Raid System
-class AntiRaidSystem:
-    join_tracker = defaultdict(lambda: deque(maxlen=100))
-    
-    @staticmethod
-    def track_join(member: discord.Member) -> bool:
-        """Track member joins to detect potential raids."""
-        guild_id = member.guild.id
-        now = datetime.datetime.now().timestamp()
-        
-        # Add join timestamp to the deque
-        AntiRaidSystem.join_tracker[guild_id].append(now)
-        
-        # Get guild settings
-        guild_data = Database.get_guild_data(guild_id)
-        anti_raid = guild_data.get("anti_raid", {})
-        
-        # Check if anti-raid is enabled
-        if not anti_raid.get("enabled", False):
-            return False
-        
-        # Check if joins exceed threshold (e.g., 10 joins in 60 seconds)
-        threshold = anti_raid.get("threshold", 10)
-        one_minute_ago = now - 60
-        
-        # Count recent joins within the last minute
-        recent_joins = sum(1 for t in AntiRaidSystem.join_tracker[guild_id] if t > one_minute_ago)
-        
-        if recent_joins >= threshold:
-            return True
-        
-        return False
-    
-    @staticmethod
-    async def enable_raid_mode(guild: discord.Guild) -> None:
-        """Enable raid mode for a guild."""
-        guild_data = Database.get_guild_data(guild.id)
-        
-        # Update raid mode status
-        guild_data["anti_raid"]["active"] = True
-        Database.save_guild_data(guild.id, guild_data)
-        
-        # Notify moderators
-        mod_log_channel_id = guild_data.get("mod_log_channel")
-        if mod_log_channel_id:
-            try:
-                channel = await bot.fetch_channel(mod_log_channel_id)
-                
-                embed = discord.Embed(
-                    title="⚠️ RAID ALERT",
-                    description="Potential raid detected! Raid mode has been automatically enabled.",
-                    color=discord.Color.red(),
-                    timestamp=datetime.datetime.now()
-                )
-                
-                embed.add_field(name="Actions Taken", value="New joins will require verification or be temporarily restricted.")
-                
-                await channel.send(embed=embed)
-            except Exception as e:
-                logger.error(f"Error sending raid alert: {e}")
-    
-    @staticmethod
-    async def disable_raid_mode(guild: discord.Guild) -> None:
-        """Disable raid mode for a guild."""
-        guild_data = Database.get_guild_data(guild.id)
-        
-        # Update raid mode status
-        guild_data["anti_raid"]["active"] = False
-        Database.save_guild_data(guild.id, guild_data)
-        
-        # Notify moderators
-        mod_log_channel_id = guild_data.get("mod_log_channel")
-        if mod_log_channel_id:
-            try:
-                channel = await bot.fetch_channel(mod_log_channel_id)
-                
-                embed = discord.Embed(
-                    title="Raid Mode Disabled",
-                    description="Raid mode has been disabled. Server operations are back to normal.",
-                    color=discord.Color.green(),
-                    timestamp=datetime.datetime.now()
-                )
-                
-                await channel.send(embed=embed)
-            except Exception as e:
-                logger.error(f"Error sending raid mode disabled alert: {e}")
-
-# Automod System
-class AutoModSystem:
-    @staticmethod
-    def check_message(message: discord.Message) -> tuple:
-        """Check message for automod violations."""
-        if not message.guild:
-            return False, None
-        
-        guild_data = Database.get_guild_data(message.guild.id)
-        automod = guild_data.get("automod", {})
-        
-        # Skip if automod is disabled
-        if not automod.get("enabled", False):
-            return False, None
-        
-        # Skip messages from moderators if configured
-        if automod.get("ignore_mods", True) and ModUtils.has_mod_permission(message.author):
-            return False, None
-        
-        # Check for banned words
-        banned_words = automod.get("banned_words", [])
-        content_lower = message.content.lower()
-        
-        for word in banned_words:
-            if word.lower() in content_lower:
-                return True, f"Message contains banned word: {word}"
-        
-        # Check for too many mentions
-        mention_limit = automod.get("mention_limit", 5)
-        if len(message.mentions) > mention_limit:
-            return True, f"Too many mentions: {len(message.mentions)}/{mention_limit}"
-        
-        # Check for excessive caps
-        if automod.get("caps_filter", False):
-            caps_count = sum(1 for c in message.content if c.isupper())
-            if len(message.content) > 10 and caps_count / len(message.content) > 0.7:
-                return True, "Excessive use of capital letters"
-        
-        # Check for spam (repeated characters)
-        if automod.get("spam_detection", False):
-            # Simple regex to detect repeated characters
-            if re.search(r"(.)\1{9,}", message.content):
-                return True, "Message contains spam (repeated characters)"
-        
-        return False, None
-    
-    @staticmethod
-    async def handle_violation(message: discord.Message, reason: str) -> None:
-        """Handle automod violation."""
-        try:
-            # Delete the message
-            await message.delete()
+            # Send join message
+            join_message = json.dumps({
+                "type": "join",
+                "username": self.username
+            })
+            self.socket.send(join_message.encode())
             
-            # DM the user
+            self.connected = True
+            print(f"Connected to chat server at {self.host}:{self.port}")
+            return True
+        except Exception as e:
+            print(f"Failed to connect to server: {e}")
+            self.connected = False
+            return False
+    
+    def send_message(self, content):
+        if not self.connected or not self.socket:
+            return False
+            
+        try:
+            message = json.dumps({
+                "type": "message",
+                "username": self.username,
+                "content": content
+            })
+            self.socket.send(message.encode())
+            return True
+        except Exception as e:
+            print(f"Error sending message: {e}")
+            self.connected = False
+            return False
+    
+    def receive_messages(self, callback):
+        while self.connected:
             try:
-                embed = discord.Embed(
-                    title="⚠️ AutoMod Warning",
-                    description=f"Your message in **{message.guild.name}** was removed:",
-                    color=discord.Color.red(),
-                    timestamp=datetime.datetime.now()
-                )
+                data = self.socket.recv(4096)
+                if not data:
+                    break
+                    
+                message = json.loads(data.decode())
                 
-                embed.add_field(name="Reason", value=reason)
-                embed.set_footer(text="This is an automated action by Guardian Bot")
+                if message["type"] == "join":
+                    formatted_msg = f"--- {message['username']} has joined the chat ---"
+                    callback(formatted_msg)
+                    
+                elif message["type"] == "message":
+                    timestamp = time.strftime("%H:%M:%S")
+                    formatted_msg = f"[{timestamp}] {message['username']}: {message['content']}"
+                    callback(formatted_msg)
+                    
+                elif message["type"] == "leave":
+                    formatted_msg = f"--- {message['username']} has left the chat ---"
+                    callback(formatted_msg)
+                    
+            except Exception as e:
+                print(f"Error receiving message: {e}")
+                self.connected = False
+                break
                 
-                await message.author.send(embed=embed)
+        print("Disconnected from server")
+        self.connected = False
+    
+    def close(self):
+        if self.connected and self.socket:
+            try:
+                # Send leave message
+                leave_message = json.dumps({
+                    "type": "leave",
+                    "username": self.username
+                })
+                self.socket.send(leave_message.encode())
+                
+                # Close socket
+                self.socket.close()
             except:
-                pass  # Ignore if we can't DM the user
-            
-            # Log the violation
-            guild_data = Database.get_guild_data(message.guild.id)
-            mod_log_channel_id = guild_data.get("mod_log_channel")
-            
-            if mod_log_channel_id:
-                try:
-                    channel = await bot.fetch_channel(mod_log_channel_id)
-                    
-                    embed = discord.Embed(
-                        title="AutoMod Action",
-                        color=discord.Color.gold(),
-                        timestamp=datetime.datetime.now()
-                    )
-                    
-                    embed.add_field(name="User", value=f"{message.author} ({message.author.id})", inline=True)
-                    embed.add_field(name="Channel", value=f"{message.channel.name} ({message.channel.id})", inline=True)
-                    embed.add_field(name="Reason", value=reason, inline=False)
-                    
-                    # Truncate message content if needed
-                    content = message.content
-                    if len(content) > 1024:
-                        content = content[:1021] + "..."
-                    
-                    embed.add_field(name="Message Content", value=content, inline=False)
-                    
-                    await channel.send(embed=embed)
-                except Exception as e:
-                    logger.error(f"Error sending to mod log channel: {e}")
-        except Exception as e:
-            logger.error(f"Error handling automod violation: {e}")
+                pass
+                
+        self.connected = False
+        self.socket = None
 
-# Welcome System
-class WelcomeSystem:
-    @staticmethod
-    async def handle_member_join(member: discord.Member) -> None:
-        """Handle member join: welcome message & autorole."""
-        guild_data = Database.get_guild_data(member.guild.id)
+class VoiceClient:
+    def __init__(self, host, port, username):
+        self.host = host
+        self.port = port
+        self.username = username
+        self.connected = False
+        self.transmitting = False
+        self.socket = None
+        self.voice_users = {}  # Store voice users and their status
+        self.status_callback = None  # Callback for voice user status updates
         
-        # Send welcome message
-        welcome_channel_id = guild_data.get("welcome_channel")
-        if welcome_channel_id:
-            try:
-                channel = await bot.fetch_channel(welcome_channel_id)
-                
-                welcome_message = guild_data.get("welcome_message", "Welcome to the server, {user}!")
-                message = welcome_message.replace("{user}", member.mention) \
-                                        .replace("{username}", member.name) \
-                                        .replace("{server}", member.guild.name)
-                
-                embed = discord.Embed(
-                    title="👋 New Member",
-                    description=message,
-                    color=discord.Color.green(),
-                    timestamp=datetime.datetime.now()
-                )
-                
-                embed.set_thumbnail(url=member.display_avatar.url)
-                
-                await channel.send(embed=embed)
-            except Exception as e:
-                logger.error(f"Error sending welcome message: {e}")
+        # Initialize PyAudio
+        self.p = pyaudio.PyAudio()
+        self.input_stream = None
+        self.output_stream = None
+        self.transmit_thread = None
+        self.receive_thread = None
         
-        # Check if raid mode is active
-        anti_raid = guild_data.get("anti_raid", {})
-        if anti_raid.get("active", False):
-            # Apply verification role if configured
-            verification_role_id = anti_raid.get("verification_role")
-            if verification_role_id:
-                try:
-                    role = member.guild.get_role(verification_role_id)
-                    if role:
-                        await member.add_roles(role)
-                except Exception as e:
-                    logger.error(f"Error applying verification role: {e}")
-        else:
-            # Apply autorole if configured
-            autorole_id = guild_data.get("autorole")
-            if autorole_id:
-                try:
-                    role = member.guild.get_role(autorole_id)
-                    if role:
-                        await member.add_roles(role)
-                except Exception as e:
-                    logger.error(f"Error applying autorole: {e}")
-    
-    @staticmethod
-    async def handle_member_leave(member: discord.Member) -> None:
-        """Handle member leave: goodbye message."""
-        guild_data = Database.get_guild_data(member.guild.id)
+    def set_status_callback(self, callback):
+        """Set callback function for voice user status updates"""
+        self.status_callback = callback
         
-        # Send goodbye message
-        welcome_channel_id = guild_data.get("welcome_channel")
-        if welcome_channel_id:
-            try:
-                channel = await bot.fetch_channel(welcome_channel_id)
-                
-                leave_message = guild_data.get("leave_message", "Goodbye, {user}!")
-                message = leave_message.replace("{user}", str(member)) \
-                                      .replace("{username}", member.name) \
-                                      .replace("{server}", member.guild.name)
-                
-                embed = discord.Embed(
-                    title="👋 Member Left",
-                    description=message,
-                    color=discord.Color.red(),
-                    timestamp=datetime.datetime.now()
-                )
-                
-                await channel.send(embed=embed)
-            except Exception as e:
-                logger.error(f"Error sending goodbye message: {e}")
-
-# Task to check temporary actions (mutes, bans)
-@tasks.loop(seconds=60)
-async def check_temp_actions():
-    """Check temporary actions like temporary bans and mutes."""
-    now = datetime.datetime.now().timestamp()
-    temp_actions = Database.get_temp_actions()
-    
-    for action_id, action_data in list(temp_actions.items()):
-        # Skip if not expired
-        if action_data["expires_at"] > now:
-            continue
-        
-        action_type = action_data["type"]
-        guild_id = action_data["guild_id"]
-        user_id = action_data["user_id"]
-        
+    def connect(self):
         try:
-            guild = bot.get_guild(guild_id)
-            if not guild:
-                continue
+            print(f"Connecting to voice server at {self.host}:{self.port}")
+            # Create a new PyAudio instance if needed
+            if not hasattr(self, 'p') or self.p is None:
+                self.p = pyaudio.PyAudio()
             
-            if action_type == "MUTE":
-                # Unmute user
-                role_id = action_data.get("role_id")
-                if role_id:
-                    role = guild.get_role(role_id)
-                    if role:
-                        member = guild.get_member(user_id)
-                        if member and role in member.roles:
-                            await member.remove_roles(role, reason="Temporary mute expired")
-                            
-                            # Log action
-                            await ModUtils.create_mod_log(
-                                guild=guild,
-                                moderator=bot.user,
-                                target=member,
-                                action="UNMUTE",
-                                reason="Temporary mute expired"
-                            )
-            
-            elif action_type == "BAN":
-                # Unban user
+            # Close existing socket if present
+            if self.socket:
                 try:
-                    user = await bot.fetch_user(user_id)
-                    await guild.unban(user, reason="Temporary ban expired")
-                    
-                    # Log action
-                    await ModUtils.create_mod_log(
-                        guild=guild,
-                        moderator=bot.user,
-                        target=user,
-                        action="UNBAN",
-                        reason="Temporary ban expired"
-                    )
+                    self.socket.close()
                 except:
                     pass
+                
+            # Create new UDP socket
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            
+            # Create audio streams
+            if self.input_stream:
+                try:
+                    self.input_stream.stop_stream()
+                    self.input_stream.close()
+                except:
+                    pass
+                    
+            if self.output_stream:
+                try:
+                    self.output_stream.stop_stream()
+                    self.output_stream.close()
+                except:
+                    pass
+            
+            # Set smaller buffer size to reduce latency
+            self.input_stream = self.p.open(format=FORMAT,
+                                         channels=CHANNELS,
+                                         rate=RATE,
+                                         input=True,
+                                         frames_per_buffer=CHUNK)
+            
+            self.output_stream = self.p.open(format=FORMAT,
+                                          channels=CHANNELS,
+                                          rate=RATE,
+                                          output=True,
+                                          frames_per_buffer=CHUNK)
+            
+            print("Audio streams created successfully")
+            
+            # Send initial join packet to server
+            join_message = json.dumps({
+                "type": "join",
+                "username": self.username,
+                "status": "active"
+            }).encode()
+            self.socket.sendto(join_message, (self.host, self.port))
+            print(f"Sent join message to {self.host}:{self.port}")
+            
+            self.connected = True
+            
+            # Start receiving audio
+            if self.receive_thread is None or not self.receive_thread.is_alive():
+                self.receive_thread = threading.Thread(target=self.receive_audio, daemon=True)
+                self.receive_thread.start()
+                print("Started audio reception thread")
+            
+            # Start transmitting automatically (open mic)
+            self.transmitting = True
+            if self.transmit_thread is None or not self.transmit_thread.is_alive():
+                self.transmit_thread = threading.Thread(target=self.transmit_audio, daemon=True)
+                self.transmit_thread.start()
+                print("Started audio transmission thread")
+            
+            # Send a heartbeat to ensure we're registered with the server
+            self.socket.sendto(json.dumps({
+                "type": "heartbeat", 
+                "username": self.username,
+                "status": "active"  # Initially active (unmuted)
+            }).encode(), (self.host, self.port))
+            
+            # Set socket timeout for non-blocking reception
+            self.socket.settimeout(0.5)
+            
+            return True
         except Exception as e:
-            logger.error(f"Error processing temporary action: {e}")
-        
-        # Remove action from database
-        Database.remove_temp_action(action_id)
-
-# Start checking temp actions when bot is ready
-@check_temp_actions.before_loop
-async def before_check_temp_actions():
-    await bot.wait_until_ready()
-
-# Event handlers
-@bot.event
-async def on_ready():
-    """Called when the bot is ready."""
-    logger.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
-    logger.info(f"Connected to {len(bot.guilds)} guilds")
+            print(f"Voice connection error: {e}")
+            # Clean up on failure
+            if hasattr(self, 'socket') and self.socket:
+                try:
+                    self.socket.close()
+                    self.socket = None
+                except:
+                    pass
+                    
+            self.connected = False
+            return False
     
-    # Set bot status
-    await bot.change_presence(activity=discord.Activity(
-        type=discord.ActivityType.watching, 
-        name=f"for {BOT_PREFIX}help"
-    ))
-    
-    # Start background tasks
-    check_temp_actions.start()
-
-@bot.event
-async def on_message(message):
-    """Called when a message is sent."""
-    # Ignore messages from bots
-    if message.author.bot:
-        return
-    
-    # Check for automod violations
-    if message.guild:
-        violated, reason = AutoModSystem.check_message(message)
-        if violated:
-            await AutoModSystem.handle_violation(message, reason)
-            return
-    
-    # Process commands
-    await bot.process_commands(message)
-
-@bot.event
-async def on_member_join(member):
-    """Called when a member joins a guild."""
-    # Check for raid
-    raid_detected = AntiRaidSystem.track_join(member)
-    if raid_detected:
-        await AntiRaidSystem.enable_raid_mode(member.guild)
-    
-    # Handle welcome message and autorole
-    await WelcomeSystem.handle_member_join(member)
-
-@bot.event
-async def on_member_remove(member):
-    """Called when a member leaves or is removed from a guild."""
-    await WelcomeSystem.handle_member_leave(member)
-
-@bot.event
-async def on_guild_join(guild):
-    """Called when the bot joins a guild."""
-    logger.info(f"Joined new guild: {guild.name} (ID: {guild.id})")
-    
-    # Create default settings for the guild
-    Database.get_guild_data(guild.id)
-
-# Basic error handler
-@bot.event
-async def on_command_error(ctx, error):
-    """Handle command errors."""
-    if isinstance(error, commands.CommandNotFound):
-        return
-    
-    if isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"Missing required argument: {error.param.name}")
-    elif isinstance(error, commands.BadArgument):
-        await ctx.send(f"Bad argument: {error}")
-    elif isinstance(error, commands.MissingPermissions):
-        await ctx.send("You don't have permission to use this command.")
-    elif isinstance(error, commands.BotMissingPermissions):
-        await ctx.send(f"I need the following permission(s) to execute this command: {', '.join(error.missing_permissions)}")
-    elif isinstance(error, commands.CommandOnCooldown):
-        await ctx.send(f"This command is on cooldown. Try again in {error.retry_after:.1f} seconds.")
-    else:
-        logger.error(f"Command error: {error}")
-        await ctx.send("An error occurred while executing the command.")
-
-# Command groups
-class Moderation(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-    
-    @commands.command(name="kick", help="Kick a member from the server")
-    @commands.has_permissions(kick_members=True)
-    @commands.bot_has_permissions(kick_members=True)
-    async def kick(self, ctx, member: discord.Member, *, reason=None):
-        """Kick a member from the server."""
-        # Check if bot can kick the member
-        if not ctx.guild.me.top_role > member.top_role:
-            return await ctx.send("I cannot kick this member as their highest role is above or equal to mine.")
+    def toggle_mute(self):
+        self.transmitting = not self.transmitting
         
-        # Check if moderator can kick the member
-        if not ModUtils.check_hierarchy(ctx.author, member):
-            return await ctx.send("You cannot kick this member as their highest role is above or equal to yours.")
-        
-        if reason is None:
-            reason = "No reason provided"
-        
-        # Create mod log entry
-        case_number = await ModUtils.create_mod_log(
-            guild=ctx.guild,
-            moderator=ctx.author,
-            target=member,
-            action="KICK",
-            reason=reason
-        )
-        
-        # DM the user
-        try:
-            embed = discord.Embed(
-                title=f"You have been kicked from {ctx.guild.name}",
-                color=discord.Color.orange(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            embed.add_field(name="Reason", value=reason)
-            embed.add_field(name="Moderator", value=str(ctx.author))
-            embed.add_field(name="Case Number", value=f"#{case_number}")
-            
-            await member.send(embed=embed)
-        except:
-            pass  # Ignore if we can't DM the user
-        
-        # Kick the member
-        try:
-            await ctx.guild.kick(member, reason=f"[{ctx.author}] {reason}")
-            
-            embed = discord.Embed(
-                title="User Kicked",
-                description=f"Successfully kicked {member}",
-                color=discord.Color.orange(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            embed.add_field(name="Reason", value=reason)
-            embed.add_field(name="Case Number", value=f"#{case_number}")
-            
-            await ctx.send(embed=embed)
-        except Exception as e:
-            await ctx.send(f"Failed to kick member: {e}")
-    
-    @commands.command(name="ban", help="Ban a member from the server")
-    @commands.has_permissions(ban_members=True)
-    @commands.bot_has_permissions(ban_members=True)
-    async def ban(self, ctx, member: Union[discord.Member, discord.User], *, reason=None):
-        """Ban a member or user from the server."""
-        if isinstance(member, discord.Member):
-            # Check if bot can ban the member
-            if not ctx.guild.me.top_role > member.top_role:
-                return await ctx.send("I cannot ban this member as their highest role is above or equal to mine.")
-            
-            # Check if moderator can ban the member
-            if not ModUtils.check_hierarchy(ctx.author, member):
-                return await ctx.send("You cannot ban this member as their highest role is above or equal to yours.")
-        
-        if reason is None:
-            reason = "No reason provided"
-        
-        # Create mod log entry
-        case_number = await ModUtils.create_mod_log(
-            guild=ctx.guild,
-            moderator=ctx.author,
-            target=member,
-            action="BAN",
-            reason=reason
-        )
-        
-        # DM the user if they're in the server
-        if isinstance(member, discord.Member):
+        # Send mute status to server
+        if self.connected and self.socket:
             try:
-                embed = discord.Embed(
-                    title=f"You have been banned from {ctx.guild.name}",
-                    color=discord.Color.red(),
-                    timestamp=datetime.datetime.now()
-                )
+                status = "muted" if not self.transmitting else "active"
+                self.socket.sendto(json.dumps({
+                    "type": "status", 
+                    "username": self.username,
+                    "status": status
+                }).encode(), (self.host, self.port))
+                print(f"Sent mute status: {status}")
+            except Exception as e:
+                print(f"Error sending mute status: {e}")
                 
-                embed.add_field(name="Reason", value=reason)
-                embed.add_field(name="Moderator", value=str(ctx.author))
-                embed.add_field(name="Case Number", value=f"#{case_number}")
+        return self.transmitting
+    
+    def transmit_audio(self):
+        print(f"Starting audio transmission thread")
+        silent_chunk = b'\x00' * CHUNK * 2  # silent audio for when muted
+        
+        while self.connected:
+            try:
+                if self.transmitting:
+                    try:
+                        data = self.input_stream.read(CHUNK, exception_on_overflow=False)
+                        if not data:
+                            continue
+                    except Exception as e:
+                        print(f"Error reading from microphone: {e}")
+                        data = silent_chunk
+                else:
+                    # When muted, just sleep briefly instead of sending silent audio
+                    time.sleep(0.05)
+                    continue
                 
-                await member.send(embed=embed)
+                if self.socket and self.connected:
+                    try:
+                        # Prepare packet with header
+                        header = json.dumps({
+                            "type": "audio", 
+                            "username": self.username
+                        }).encode()
+                        header_length = struct.pack("!I", len(header))
+                        
+                        # Send header length, header, then audio data
+                        packet = header_length + header + data
+                        self.socket.sendto(packet, (self.host, self.port))
+                    except Exception as e:
+                        print(f"Error sending audio packet: {e}")
+                        time.sleep(0.1)
+                        
+            except Exception as e:
+                print(f"Error in transmit_audio thread: {e}")
+                time.sleep(0.1)
+                
+        print(f"Audio transmission thread ending")
+    
+    def receive_audio(self):
+        print(f"Starting audio reception thread")
+        
+        while self.connected:
+            try:
+                if not self.socket:
+                    print("Socket not available in receive_audio")
+                    time.sleep(0.5)
+                    continue
+                    
+                try:
+                    # Set timeout to prevent blocking forever
+                    data, addr = self.socket.recvfrom(CHUNK * 2 + 1024)  # Extra space for header
+                    
+                    # Debug info
+                    print(f"Received {len(data)} bytes from {addr}")
+                    
+                    # Check if this is a non-audio packet (control message)
+                    if data.startswith(b'{'):
+                        try:
+                            msg = json.loads(data.decode())
+                            msg_type = msg.get('type', '')
+                            print(f"Received control message: {msg_type} from server")
+                            
+                            # Handle user list update
+                            if msg_type == "user_list":
+                                self.voice_users = msg.get('users', {})
+                                print(f"Updated voice users: {self.voice_users}")
+                                if self.status_callback:
+                                    self.status_callback(self.voice_users)
+                            
+                            continue
+                        except json.JSONDecodeError:
+                            # Not valid JSON, might be part of audio data
+                            pass
+                    
+                    # Check if we have enough data for a header
+                    if len(data) < 8:  # Need at least 4 bytes for header length + some header data
+                        print(f"Packet too small: {len(data)} bytes")
+                        continue
+                    
+                    # Parse audio packet
+                    try:
+                        # Extract header length (first 4 bytes)
+                        header_length = struct.unpack("!I", data[:4])[0]
+                        
+                        # Make sure we have enough data
+                        if len(data) < 4 + header_length:
+                            print(f"Incomplete packet: expected {4 + header_length}, got {len(data)}")
+                            continue
+                        
+                        # Extract header and decode
+                        header_data = data[4:4+header_length]
+                        header = json.loads(header_data.decode())
+                        sender = header.get("username", "Unknown")
+                        
+                        print(f"Received audio from {sender}")
+                        
+                        # Extract audio data
+                        audio_data = data[4+header_length:]
+                        
+                        # Play audio if it's not from us and we have an output stream
+                        if sender != self.username and self.output_stream and audio_data:
+                            print(f"Playing audio from {sender} ({len(audio_data)} bytes)")
+                            self.output_stream.write(audio_data)
+                        
+                    except Exception as e:
+                        print(f"Error parsing audio packet: {str(e)}")
+                        
+                except socket.timeout:
+                    # This is expected, just continue the loop
+                    continue
+                except Exception as e:
+                    print(f"Error receiving audio data: {e}")
+                    time.sleep(0.1)
+                    
+            except Exception as e:
+                print(f"Error in audio receive loop: {e}")
+                time.sleep(0.1)
+                
+        print(f"Audio reception thread ending")
+    
+    def close(self):
+        print("Closing voice client")
+        # Signal threads to terminate
+        self.connected = False
+        self.transmitting = False
+        
+        # Send leave notification if possible
+        if self.socket:
+            try:
+                self.socket.sendto(json.dumps({
+                    "type": "leave", 
+                    "username": self.username
+                }).encode(), (self.host, self.port))
             except:
-                pass  # Ignore if we can't DM the user
+                pass
         
-        # Ban the member/user
-        try:
-            await ctx.guild.ban(member, reason=f"[{ctx.author}] {reason}", delete_message_days=1)
-            
-            embed = discord.Embed(
-                title="User Banned",
-                description=f"Successfully banned {member}",
-                color=discord.Color.red(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            embed.add_field(name="Reason", value=reason)
-            embed.add_field(name="Case Number", value=f"#{case_number}")
-            
-            await ctx.send(embed=embed)
-        except Exception as e:
-            await ctx.send(f"Failed to ban user: {e}")
-    
-    @commands.command(name="tempban", help="Temporarily ban a member from the server")
-    @commands.has_permissions(ban_members=True)
-    @commands.bot_has_permissions(ban_members=True)
-    async def tempban(self, ctx, member: Union[discord.Member, discord.User], duration: str, *, reason=None):
-        """Temporarily ban a member from the server."""
-        # Parse duration (e.g., 1d, 2h, 30m)
-        duration_seconds = 0
-        time_dict = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+        # Give threads a moment to notice the flags
+        time.sleep(0.2)
         
-        duration_match = re.match(r"^(\d+)([smhdw])$", duration.lower())
-        if not duration_match:
-            return await ctx.send("Invalid duration format. Use: 1s, 2m, 3h, 4d, 5w etc.")
-        
-        amount = int(duration_match.group(1))
-        unit = duration_match.group(2)
-        duration_seconds = amount * time_dict[unit]
-        
-        if duration_seconds < 60 or duration_seconds > 2419200:  # Between 1 minute and 4 weeks
-            return await ctx.send("Duration must be between 1 minute and 4 weeks.")
-        
-        # Format the duration for display
-        duration_formatted = ""
-        if duration_seconds >= 86400:  # days
-            days = duration_seconds // 86400
-            duration_seconds %= 86400
-            duration_formatted += f"{days} day(s) "
-        if duration_seconds >= 3600:  # hours
-            hours = duration_seconds // 3600
-            duration_seconds %= 3600
-            duration_formatted += f"{hours} hour(s) "
-        if duration_seconds >= 60:  # minutes
-            minutes = duration_seconds // 60
-            duration_seconds %= 60
-            duration_formatted += f"{minutes} minute(s) "
-        if duration_seconds > 0:  # seconds
-            duration_formatted += f"{duration_seconds} second(s)"
-        
-        duration_formatted = duration_formatted.strip()
-        
-        # Ban the member
-        await self.ban(ctx, member, reason=f"{reason} (Temporary: {duration_formatted})")
-        
-        # Add temporary ban to database
-        expires_at = datetime.datetime.now().timestamp() + (amount * time_dict[unit])
-        
-        action_id = f"ban_{member.id}_{ctx.guild.id}"
-        action_data = {
-            "type": "BAN",
-            "guild_id": ctx.guild.id,
-            "user_id": member.id,
-            "moderator_id": ctx.author.id,
-            "reason": reason,
-            "expires_at": expires_at
-        }
-        
-        Database.add_temp_action(action_id, action_data)
-        
-        await ctx.send(f"User has been banned for {duration_formatted}.")
-    
-    @commands.command(name="unban", help="Unban a user from the server")
-    @commands.has_permissions(ban_members=True)
-    @commands.bot_has_permissions(ban_members=True)
-    async def unban(self, ctx, user_id: int, *, reason=None):
-        """Unban a user from the server using their ID."""
-        if reason is None:
-            reason = "No reason provided"
-        
-        try:
-            user = await bot.fetch_user(user_id)
-            
-            # Check if user is banned
-            ban_entry = None
-            async for entry in ctx.guild.bans():
-                if entry.user.id == user_id:
-                    ban_entry = entry
-                    break
-            
-            if not ban_entry:
-                return await ctx.send("This user is not banned.")
-            
-            # Create mod log entry
-            case_number = await ModUtils.create_mod_log(
-                guild=ctx.guild,
-                moderator=ctx.author,
-                target=user,
-                action="UNBAN",
-                reason=reason
-            )
-            
-            # Unban the user
-            await ctx.guild.unban(user, reason=f"[{ctx.author}] {reason}")
-            
-            # Remove any temp ban from database
-            action_id = f"ban_{user_id}_{ctx.guild.id}"
-            Database.remove_temp_action(action_id)
-            
-            embed = discord.Embed(
-                title="User Unbanned",
-                description=f"Successfully unbanned {user}",
-                color=discord.Color.green(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            embed.add_field(name="Reason", value=reason)
-            embed.add_field(name="Case Number", value=f"#{case_number}")
-            
-            await ctx.send(embed=embed)
-        except discord.NotFound:
-            await ctx.send("User not found.")
-        except Exception as e:
-            await ctx.send(f"Failed to unban user: {e}")
-    
-    @commands.command(name="mute", help="Mute a member in the server")
-    @commands.has_permissions(manage_roles=True)
-    @commands.bot_has_permissions(manage_roles=True)
-    async def mute(self, ctx, member: discord.Member, *, reason=None):
-        """Mute a member in the server."""
-        # Check if bot can mute the member
-        if not ctx.guild.me.top_role > member.top_role:
-            return await ctx.send("I cannot mute this member as their highest role is above or equal to mine.")
-        
-        # Check if moderator can mute the member
-        if not ModUtils.check_hierarchy(ctx.author, member):
-            return await ctx.send("You cannot mute this member as their highest role is above or equal to yours.")
-        
-        if reason is None:
-            reason = "No reason provided"
-        
-        # Get or create mute role
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        mute_role_id = guild_data.get("mute_role")
-        mute_role = None
-        
-        if mute_role_id:
-            mute_role = ctx.guild.get_role(mute_role_id)
-        
-        if not mute_role:
-            # Create mute role
+        # Close streams
+        if hasattr(self, 'input_stream') and self.input_stream:
             try:
-                mute_role = await ctx.guild.create_role(
-                    name="Muted",
-                    reason="Guardian Bot: Created mute role",
-                    permissions=discord.Permissions(send_messages=False, speak=False)
-                )
-                
-                # Update guild data
-                guild_data["mute_role"] = mute_role.id
-                Database.save_guild_data(ctx.guild.id, guild_data)
-                
-                # Set up role permissions in all text channels
-                for channel in ctx.guild.channels:
-                    try:
-                        await channel.set_permissions(mute_role, send_messages=False, speak=False, add_reactions=False)
-                    except:
-                        continue
+                self.input_stream.stop_stream()
+                self.input_stream.close()
+                self.input_stream = None
             except Exception as e:
-                return await ctx.send(f"Failed to create mute role: {e}")
-        
-        # Check if already muted
-        if mute_role in member.roles:
-            return await ctx.send("This member is already muted.")
-        
-        # Create mod log entry
-        case_number = await ModUtils.create_mod_log(
-            guild=ctx.guild,
-            moderator=ctx.author,
-            target=member,
-            action="MUTE",
-            reason=reason
-        )
-        
-        # DM the user
-        try:
-            embed = discord.Embed(
-                title=f"You have been muted in {ctx.guild.name}",
-                color=discord.Color.gold(),
-                timestamp=datetime.datetime.now()
-            )
+                print(f"Error closing input stream: {e}")
             
-            embed.add_field(name="Reason", value=reason)
-            embed.add_field(name="Moderator", value=str(ctx.author))
-            embed.add_field(name="Case Number", value=f"#{case_number}")
-            
-            await member.send(embed=embed)
-        except:
-            pass  # Ignore if we can't DM the user
-        
-        # Mute the member
-        try:
-            await member.add_roles(mute_role, reason=f"[{ctx.author}] {reason}")
-            
-            embed = discord.Embed(
-                title="User Muted",
-                description=f"Successfully muted {member}",
-                color=discord.Color.gold(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            embed.add_field(name="Reason", value=reason)
-            embed.add_field(name="Case Number", value=f"#{case_number}")
-            
-            await ctx.send(embed=embed)
-        except Exception as e:
-            await ctx.send(f"Failed to mute member: {e}")
-    
-    @commands.command(name="tempmute", help="Temporarily mute a member in the server")
-    @commands.has_permissions(manage_roles=True)
-    @commands.bot_has_permissions(manage_roles=True)
-    async def tempmute(self, ctx, member: discord.Member, duration: str, *, reason=None):
-        """Temporarily mute a member in the server."""
-        # Parse duration (e.g., 1d, 2h, 30m)
-        duration_seconds = 0
-        time_dict = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
-        
-        duration_match = re.match(r"^(\d+)([smhdw])$", duration.lower())
-        if not duration_match:
-            return await ctx.send("Invalid duration format. Use: 1s, 2m, 3h, 4d, 5w etc.")
-        
-        amount = int(duration_match.group(1))
-        unit = duration_match.group(2)
-        duration_seconds = amount * time_dict[unit]
-        
-        if duration_seconds < 60 or duration_seconds > 2419200:  # Between 1 minute and 4 weeks
-            return await ctx.send("Duration must be between 1 minute and 4 weeks.")
-        
-        # Format the duration for display
-        duration_formatted = ""
-        if duration_seconds >= 86400:  # days
-            days = duration_seconds // 86400
-            duration_seconds %= 86400
-            duration_formatted += f"{days} day(s) "
-        if duration_seconds >= 3600:  # hours
-            hours = duration_seconds // 3600
-            duration_seconds %= 3600
-            duration_formatted += f"{hours} hour(s) "
-        if duration_seconds >= 60:  # minutes
-            minutes = duration_seconds // 60
-            duration_seconds %= 60
-            duration_formatted += f"{minutes} minute(s) "
-        if duration_seconds > 0:  # seconds
-            duration_formatted += f"{duration_seconds} second(s)"
-        
-        duration_formatted = duration_formatted.strip()
-        
-        # Get or create mute role
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        mute_role_id = guild_data.get("mute_role")
-        mute_role = None
-        
-        if mute_role_id:
-            mute_role = ctx.guild.get_role(mute_role_id)
-        
-        if not mute_role:
-            # Create mute role
+        if hasattr(self, 'output_stream') and self.output_stream:
             try:
-                mute_role = await ctx.guild.create_role(
-                    name="Muted",
-                    reason="Guardian Bot: Created mute role",
-                    permissions=discord.Permissions(send_messages=False, speak=False)
-                )
-                
-                # Update guild data
-                guild_data["mute_role"] = mute_role.id
-                Database.save_guild_data(ctx.guild.id, guild_data)
-                
-                # Set up role permissions in all text channels
-                for channel in ctx.guild.channels:
-                    try:
-                        await channel.set_permissions(mute_role, send_messages=False, speak=False, add_reactions=False)
-                    except:
-                        continue
+                self.output_stream.stop_stream()
+                self.output_stream.close()
+                self.output_stream = None
             except Exception as e:
-                return await ctx.send(f"Failed to create mute role: {e}")
+                print(f"Error closing output stream: {e}")
+            
+        # Close socket
+        if self.socket:
+            try:
+                self.socket.close()
+                self.socket = None
+            except Exception as e:
+                print(f"Error closing voice socket: {e}")
         
-        # Create mod log entry
-        case_number = await ModUtils.create_mod_log(
-            guild=ctx.guild,
-            moderator=ctx.author,
-            target=member,
-            action="MUTE",
-            reason=f"{reason} (Temporary: {duration_formatted})" if reason else f"Temporary: {duration_formatted}",
-            duration=duration_formatted
-        )
+        # Terminate PyAudio instance
+        if hasattr(self, 'p') and self.p:
+            try:
+                self.p.terminate()
+                self.p = None
+            except Exception as e:
+                print(f"Error terminating PyAudio: {e}")
         
-        # DM the user
+        print("Voice client closed")
+
+# Now let's fix the VoiceServer class to handle audio properly
+class VoiceServer:
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+        self.clients = {}  # Dictionary to store client info: {addr: {'username': username, 'last_seen': timestamp, 'status': status}}
+        self.running = False
+        self.lock = threading.Lock()
+        
+    def start(self):
         try:
-            embed = discord.Embed(
-                title=f"You have been temporarily muted in {ctx.guild.name}",
-                color=discord.Color.gold(),
-                timestamp=datetime.datetime.now()
-            )
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.socket.bind((self.host, self.port))
+            self.running = True
             
-            embed.add_field(name="Reason", value=reason or "No reason provided")
-            embed.add_field(name="Duration", value=duration_formatted)
-            embed.add_field(name="Moderator", value=str(ctx.author))
-            embed.add_field(name="Case Number", value=f"#{case_number}")
+            print(f"Voice server running on {self.host}:{self.port}")
             
-            await member.send(embed=embed)
-        except:
-            pass  # Ignore if we can't DM the user
+            # Start cleanup thread to remove inactive clients
+            cleanup_thread = threading.Thread(target=self.cleanup_inactive_clients, daemon=True)
+            cleanup_thread.start()
+            
+            # Start broadcast thread to periodically send user list updates
+            broadcast_thread = threading.Thread(target=self.broadcast_user_list, daemon=True)
+            broadcast_thread.start()
+            
+            # Main server loop
+            while self.running:
+                try:
+                    data, addr = self.socket.recvfrom(CHUNK * 2 + 1024)  # Extra space for header
+                    print(f"Voice server received {len(data)} bytes from {addr}")
+                    
+                    # Process the received data
+                    self.process_client_data(data, addr)
+                except Exception as e:
+                    print(f"Error in voice server main loop: {e}")
+                    time.sleep(0.1)
+                    
+        except Exception as e:
+            print(f"Voice server failed to start: {e}")
+            self.running = False
+    
+    def process_client_data(self, data, addr):
+        # Update client's last seen time
+        with self.lock:
+            if addr in self.clients:
+                self.clients[addr]['last_seen'] = time.time()
         
-        # Mute the member
+        # Check if this is a join message or other control message
+        if data == b"join":
+            with self.lock:
+                if addr not in self.clients:
+                    self.clients[addr] = {
+                        'username': "Unknown",
+                        'last_seen': time.time(),
+                        'status': 'active'  # Default to active (unmuted)
+                    }
+                    print(f"New voice client connected: {addr}")
+                    self.broadcast_user_list_now()  # Send updated user list immediately
+            return
+        
+        # Try to parse as JSON if it might be a control message
+        if data.startswith(b'{'):
+            try:
+                msg = json.loads(data.decode())
+                msg_type = msg.get('type', '')
+                print(f"Processing voice control message: {msg_type}")
+                
+                if msg_type == 'join':
+                    username = msg.get('username', 'Unknown')
+                    status = msg.get('status', 'active')
+                    with self.lock:
+                        if addr not in self.clients:
+                            self.clients[addr] = {
+                                'username': username, 
+                                'last_seen': time.time(),
+                                'status': status
+                            }
+                        else:
+                            self.clients[addr]['username'] = username
+                            self.clients[addr]['last_seen'] = time.time()
+                            self.clients[addr]['status'] = status
+                    print(f"Voice client joined: {username} at {addr}")
+                    self.broadcast_user_list_now()  # Update user list
+                    return
+                
+                elif msg_type == 'heartbeat':
+                    username = msg.get('username', 'Unknown')
+                    status = msg.get('status', 'active')
+                    with self.lock:
+                        if addr not in self.clients:
+                            self.clients[addr] = {
+                                'username': username, 
+                                'last_seen': time.time(),
+                                'status': status
+                            }
+                        else:
+                            self.clients[addr]['username'] = username
+                            self.clients[addr]['last_seen'] = time.time()
+                            self.clients[addr]['status'] = status
+                    print(f"Heartbeat from {username} at {addr}")
+                    # Only broadcast user list if this is a new client
+                    if addr not in self.clients:
+                        self.broadcast_user_list_now()
+                    return
+                
+                elif msg_type == 'leave':
+                    with self.lock:
+                        if addr in self.clients:
+                            username = self.clients[addr].get('username', 'Unknown')
+                            print(f"Voice client {username} ({addr}) left")
+                            del self.clients[addr]
+                            self.broadcast_user_list_now()  # Update user list
+                    return
+                
+                elif msg_type == 'status':
+                    # Just update the client info, don't forward
+                    username = msg.get('username', 'Unknown')
+                    status = msg.get('status', 'unknown')
+                    with self.lock:
+                        if addr in self.clients:
+                            self.clients[addr]['username'] = username
+                            self.clients[addr]['status'] = status
+                            self.clients[addr]['last_seen'] = time.time()
+                    print(f"Client {username} is now {status}")
+                    self.broadcast_user_list_now()  # Update user list
+                    return
+            except json.JSONDecodeError:
+                # Not a JSON message, assume it's audio data
+                pass
+            except Exception as e:
+                print(f"Error processing control message: {e}")
+                return
+        
+        # Relay audio data to all other clients
         try:
-            await member.add_roles(mute_role, reason=f"[{ctx.author}] {reason or 'No reason'} (Temporary: {duration_formatted})")
+            with self.lock:
+                clients_copy = list(self.clients.keys())
             
-            # Register temporary mute
-            expires_at = datetime.datetime.now().timestamp() + (amount * time_dict[unit])
+            sent_count = 0
+            for client_addr in clients_copy:
+                if client_addr != addr:  # Don't send back to the sender
+                    try:
+                        self.socket.sendto(data, client_addr)
+                        sent_count += 1
+                    except Exception as e:
+                        print(f"Error sending to client {client_addr}: {e}")
             
-            action_id = f"mute_{member.id}_{ctx.guild.id}"
-            action_data = {
-                "type": "MUTE",
-                "guild_id": ctx.guild.id,
-                "user_id": member.id,
-                "moderator_id": ctx.author.id,
-                "reason": reason,
-                "role_id": mute_role.id,
-                "expires_at": expires_at
+            print(f"Relayed audio to {sent_count} clients")
+        except Exception as e:
+            print(f"Error relaying audio data: {e}")
+    
+    def cleanup_inactive_clients(self):
+        """Remove clients that haven't been seen for a while"""
+        TIMEOUT = 10  # seconds
+        
+        while self.running:
+            try:
+                time.sleep(5)  # Check every 5 seconds
+                
+                current_time = time.time()
+                to_remove = []
+                
+                with self.lock:
+                    for addr, client_info in self.clients.items():
+                        if current_time - client_info['last_seen'] > TIMEOUT:
+                            to_remove.append(addr)
+                    
+                    if to_remove:
+                        for addr in to_remove:
+                            username = self.clients[addr].get('username', 'Unknown')
+                            print(f"Removing inactive voice client: {username} ({addr})")
+                            del self.clients[addr]
+                        
+                        # Broadcast updated user list if we removed anyone
+                        self.broadcast_user_list_now()
+                        
+            except Exception as e:
+                print(f"Error in cleanup thread: {e}")
+    
+    def broadcast_user_list(self):
+        """Periodically broadcast the list of users to all clients"""
+        while self.running:
+            try:
+                time.sleep(3)  # Update every 3 seconds
+                self.broadcast_user_list_now()
+            except Exception as e:
+                print(f"Error in broadcast thread: {e}")
+    
+    def broadcast_user_list_now(self):
+        """Immediately broadcast current user list to all clients"""
+        try:
+            # Create user list with usernames and statuses
+            users = {}
+            with self.lock:
+                for addr, client_info in self.clients.items():
+                    username = client_info.get('username', 'Unknown')
+                    if username != 'Unknown':  # Only include clients with proper usernames
+                        users[username] = client_info.get('status', 'active')
+            
+            # Create user list message
+            user_list_msg = json.dumps({
+                "type": "user_list",
+                "users": users
+            }).encode()
+            
+            # Send to all clients
+            with self.lock:
+                clients_copy = list(self.clients.keys())
+            
+            for client_addr in clients_copy:
+                try:
+                    self.socket.sendto(user_list_msg, client_addr)
+                except Exception as e:
+                    print(f"Error sending user list to {client_addr}: {e}")
+                    
+            print(f"Broadcast user list: {users}")
+                    
+        except Exception as e:
+            print(f"Error broadcasting user list: {e}")
+    
+    def stop(self):
+        self.running = False
+        if hasattr(self, 'socket'):
+            try:
+                self.socket.close()
+            except Exception as e:
+                print(f"Error closing voice server socket: {e}")
+
+# Add this to DiscordCloneApp class
+def add_chat_message(self, username, content):
+    """Add a message to the chat history"""
+    self.chat_history.config(state=tk.NORMAL)
+    timestamp = time.strftime("%H:%M:%S")
+    self.chat_history.insert(tk.END, f"[{timestamp}] {username}: {content}\n")
+    self.chat_history.see(tk.END)  # Scroll to bottom
+    self.chat_history.config(state=tk.DISABLED)
+
+class ChatServer:
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+        self.clients = []
+        self.running = False
+        self.lock = threading.Lock()
+        
+    def start(self):
+        try:
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.server_socket.bind((self.host, self.port))
+            self.server_socket.listen(5)
+            self.running = True
+            
+            print(f"Chat server running on {self.host}:{self.port}")
+            
+            while self.running:
+                try:
+                    client_socket, address = self.server_socket.accept()
+                    client_thread = threading.Thread(target=self.handle_client, 
+                                                   args=(client_socket, address),
+                                                   daemon=True)
+                    client_thread.start()
+                except Exception as e:
+                    print(f"Error accepting connection: {e}")
+                    if not self.running:
+                        break
+                    time.sleep(0.1)
+        except Exception as e:
+            print(f"Server failed to start: {e}")
+            self.running = False
+            
+    def handle_client(self, client_socket, address):
+        username = None
+        try:
+            # Handle client connection
+            client_info = {
+                "socket": client_socket,
+                "address": address,
+                "username": None
             }
             
-            Database.add_temp_action(action_id, action_data)
+            with self.lock:
+                self.clients.append(client_info)
             
-            embed = discord.Embed(
-                title="User Temporarily Muted",
-                description=f"Successfully muted {member} for {duration_formatted}",
-                color=discord.Color.gold(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            embed.add_field(name="Reason", value=reason or "No reason provided")
-            embed.add_field(name="Case Number", value=f"#{case_number}")
-            
-            await ctx.send(embed=embed)
+            while self.running:
+                data = client_socket.recv(4096)
+                if not data:
+                    break
+                    
+                message = json.loads(data.decode())
+                
+                if message["type"] == "join":
+                    username = message["username"]
+                    client_info["username"] = username
+                    print(f"User joined: {username}")
+                    
+                    # Notify other clients
+                    self.broadcast(json.dumps({
+                        "type": "join",
+                        "username": username
+                    }), client_socket)
+                    
+                elif message["type"] == "message":
+                    print(f"Message from {message['username']}: {message['content']}")
+                    
+                    # Broadcast the message to all clients
+                    self.broadcast(data.decode(), None)
+                    
+                elif message["type"] == "leave":
+                    break
+                    
         except Exception as e:
-            await ctx.send(f"Failed to mute member: {e}")
-    
-    @commands.command(name="unmute", help="Unmute a muted member")
-    @commands.has_permissions(manage_roles=True)
-    @commands.bot_has_permissions(manage_roles=True)
-    async def unmute(self, ctx, member: discord.Member, *, reason=None):
-        """Unmute a muted member."""
-        if reason is None:
-            reason = "No reason provided"
-        
-        # Get mute role
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        mute_role_id = guild_data.get("mute_role")
-        
-        if not mute_role_id:
-            return await ctx.send("No mute role is configured for this server.")
-        
-        mute_role = ctx.guild.get_role(mute_role_id)
-        if not mute_role:
-            return await ctx.send("Mute role not found. It may have been deleted.")
-        
-        # Check if member is muted
-        if mute_role not in member.roles:
-            return await ctx.send("This member is not muted.")
-        
-        # Create mod log entry
-        case_number = await ModUtils.create_mod_log(
-            guild=ctx.guild,
-            moderator=ctx.author,
-            target=member,
-            action="UNMUTE",
-            reason=reason
-        )
-        
-        # Remove temporary mute from database if exists
-        action_id = f"mute_{member.id}_{ctx.guild.id}"
-        Database.remove_temp_action(action_id)
-        
-        # Unmute the member
-        try:
-            await member.remove_roles(mute_role, reason=f"[{ctx.author}] {reason}")
+            print(f"Error handling client {address}: {e}")
             
-            embed = discord.Embed(
-                title="User Unmuted",
-                description=f"Successfully unmuted {member}",
-                color=discord.Color.green(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            embed.add_field(name="Reason", value=reason)
-            embed.add_field(name="Case Number", value=f"#{case_number}")
-            
-            await ctx.send(embed=embed)
-            
-            # DM the user
+        finally:
+            # Clean up and remove client
+            if username:
+                print(f"User left: {username}")
+                self.broadcast(json.dumps({
+                    "type": "leave",
+                    "username": username
+                }), None)
+                
             try:
-                embed = discord.Embed(
-                    title=f"You have been unmuted in {ctx.guild.name}",
-                    color=discord.Color.green(),
-                    timestamp=datetime.datetime.now()
-                )
-                
-                embed.add_field(name="Reason", value=reason)
-                embed.add_field(name="Moderator", value=str(ctx.author))
-                
-                await member.send(embed=embed)
+                client_socket.close()
             except:
-                pass  # Ignore if we can't DM the user
-        except Exception as e:
-            await ctx.send(f"Failed to unmute member: {e}")
-    
-    @commands.command(name="warn", help="Warn a member")
-    @commands.has_permissions(kick_members=True)
-    async def warn(self, ctx, member: discord.Member, *, reason=None):
-        """Warn a member."""
-        if reason is None:
-            return await ctx.send("You must provide a reason for the warning.")
+                pass
+            
+            with self.lock:
+                self.clients = [c for c in self.clients if c["socket"] != client_socket]
+            
+    def broadcast(self, message, exclude_socket=None):
+        with self.lock:
+            clients_copy = self.clients.copy()
+            
+        for client in clients_copy:
+            # Don't send to the client who sent the message
+            if exclude_socket is not client["socket"]:
+                try:
+                    client["socket"].send(message.encode() if isinstance(message, str) else message)
+                except:
+                    # Remove failed clients later
+                    pass
+                    
+    def stop(self):
+        self.running = False
         
-        # Check if moderator can warn the member
-        if not ModUtils.check_hierarchy(ctx.author, member):
-            return await ctx.send("You cannot warn this member as their highest role is above or equal to yours.")
+        # Close all client connections
+        with self.lock:
+            clients_copy = self.clients.copy()
+            
+        for client in clients_copy:
+            try:
+                client["socket"].close()
+            except:
+                pass
+                
+        # Close server socket
+        if hasattr(self, 'server_socket'):
+            try:
+                self.server_socket.close()
+            except Exception as e:
+                print(f"Error closing chat server socket: {e}")
+
+class DiscordCloneApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Discord Clone")
+        self.root.geometry("800x600")
+        self.root.configure(bg="#36393f")
         
-        # Add warning to database
-        warning_count = Database.add_warning(ctx.guild.id, member.id, ctx.author.id, reason)
+        # Generate username
+        self.username = generate_username()
         
-        # Create mod log entry
-        case_number = await ModUtils.create_mod_log(
-            guild=ctx.guild,
-            moderator=ctx.author,
-            target=member,
-            action="WARN",
-            reason=reason
-        )
+        # Try getting local IP for automatic server
+        self.server_host = self.get_local_ip()
+        self.running_server = True  # Always run server by default
         
-        # Send confirmation
-        embed = discord.Embed(
-            title="User Warned",
-            description=f"Successfully warned {member}",
-            color=discord.Color.gold(),
-            timestamp=datetime.datetime.now()
-        )
+        # Set up UI
+        self.setup_ui()
         
-        embed.add_field(name="Reason", value=reason)
-        embed.add_field(name="Warning Count", value=warning_count)
-        embed.add_field(name="Case Number", value=f"#{case_number}")
+        # Set up server and client
+        self.setup_network()
         
-        await ctx.send(embed=embed)
+        # Handle window closing
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
-        # DM the user
+    def get_local_ip(self):
         try:
-            embed = discord.Embed(
-                title=f"You have received a warning in {ctx.guild.name}",
-                color=discord.Color.gold(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            embed.add_field(name="Reason", value=reason)
-            embed.add_field(name="Moderator", value=str(ctx.author))
-            embed.add_field(name="Warning Count", value=warning_count)
-            embed.add_field(name="Case Number", value=f"#{case_number}")
-            
-            await member.send(embed=embed)
+            # Create a dummy connection to get local IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
         except:
-            pass  # Ignore if we can't DM the user
-    
-    @commands.command(name="warnings", help="View warnings for a member")
-    @commands.has_permissions(kick_members=True)
-    async def warnings(self, ctx, member: discord.Member):
-        """View warnings for a member."""
-        warnings = Database.get_warnings(ctx.guild.id, member.id)
-        
-        if not warnings:
-            return await ctx.send(f"{member} has no warnings.")
-        
-        embed = discord.Embed(
-            title=f"Warnings for {member}",
-            description=f"Total warnings: {len(warnings)}",
-            color=discord.Color.gold(),
-            timestamp=datetime.datetime.now()
-        )
-        
-        for i, warning in enumerate(warnings):
-            moderator = ctx.guild.get_member(warning["moderator_id"])
-            mod_name = str(moderator) if moderator else f"Unknown ({warning['moderator_id']})"
+            return "127.0.0.1"  # Fallback to localhost
             
-            warning_time = datetime.datetime.fromtimestamp(warning["timestamp"])
-            time_str = warning_time.strftime("%Y-%m-%d %H:%M:%S")
-            
-            embed.add_field(
-                name=f"Warning #{i+1}",
-                value=f"**Reason:** {warning['reason']}\n**Moderator:** {mod_name}\n**Date:** {time_str}",
-                inline=False
-            )
+    def setup_ui(self):
+        # App theme colors (Discord-like)
+        self.bg_color = "#36393f"
+        self.sidebar_color = "#2f3136"
+        self.text_color = "#dcddde"
+        self.input_bg = "#40444b"
+        self.accent_color = "#7289da"
+        self.muted_color = "#ED4245"  # Red color for muted users
         
-        await ctx.send(embed=embed)
-    
-    @commands.command(name="clearwarnings", help="Clear warnings for a member")
-    @commands.has_permissions(kick_members=True)
-    async def clearwarnings(self, ctx, member: discord.Member, index: int = None):
-        """Clear all or specific warnings for a member."""
-        if index is not None:
-            # Adjust for 0-indexing
-            index -= 1
-            
-            if index < 0:
-                return await ctx.send("Warning index must be positive.")
+        # Configure main layout
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
         
-        success = Database.remove_warning(ctx.guild.id, member.id, index)
+        # Main frame
+        self.main_frame = tk.Frame(self.root, bg=self.bg_color)
+        self.main_frame.grid(row=0, column=0, sticky="nsew")
+        self.main_frame.columnconfigure(1, weight=1)
+        self.main_frame.rowconfigure(0, weight=1)
         
-        if not success:
-            if index is not None:
-                return await ctx.send(f"Warning #{index+1} not found for {member}.")
-            else:
-                return await ctx.send(f"{member} has no warnings to clear.")
+        # Sidebar
+        self.sidebar = tk.Frame(self.main_frame, width=200, bg=self.sidebar_color)
+        self.sidebar.grid(row=0, column=0, sticky="ns")
+        self.sidebar.grid_propagate(False)
         
-        if index is not None:
-            await ctx.send(f"Warning #{index+1} has been cleared for {member}.")
+        # Server info
+        self.server_label = tk.Label(self.sidebar, text="Simple Discord", 
+                                    font=("Arial", 14, "bold"), 
+                                    bg=self.sidebar_color, fg=self.text_color)
+        self.server_label.pack(pady=(15, 20))
+        
+        # Text channel
+        tk.Label(self.sidebar, text="GLOBAL CHAT", 
+                font=("Arial", 12), 
+                bg=self.sidebar_color, fg=self.text_color).pack(pady=5, padx=10, anchor="w")
+        
+        # Voice channel section
+        self.voice_section = tk.Frame(self.sidebar, bg=self.sidebar_color)
+        self.voice_section.pack(pady=5, fill="x")
+        
+        tk.Label(self.voice_section, text="VOICE CHANNELS", 
+                font=("Arial", 12), 
+                bg=self.sidebar_color, fg=self.text_color).pack(pady=5, padx=10, anchor="w")
+        
+        # Voice channel
+        self.voice_btn_frame = tk.Frame(self.voice_section, bg=self.sidebar_color)
+        self.voice_btn_frame.pack(pady=5, fill="x", padx=10)
+        
+        tk.Label(self.voice_btn_frame, text="🔊 Voice Chat", 
+                font=("Arial", 12), 
+                bg=self.sidebar_color, fg=self.text_color).pack(side="left")
+        
+        self.voice_btn = tk.Button(self.voice_btn_frame, text="Join", 
+                                  bg=self.accent_color, fg="white",
+                                  command=self.toggle_voice)
+        self.voice_btn.pack(side="right")
+        
+        # Voice users frame (will be shown when voice is joined)
+        self.voice_users_frame = tk.Frame(self.voice_section, bg=self.sidebar_color)
+        self.voice_users_frame.pack(fill="x", padx=15, pady=5)
+        
+        # This will hold our voice user labels - initially empty
+        self.voice_user_labels = {}
+        
+        # Add a label to show when no users are connected
+        self.no_users_label = tk.Label(self.voice_users_frame, 
+                                     text="No users in voice chat", 
+                                     font=("Arial", 9, "italic"),
+                                     bg=self.sidebar_color, 
+                                     fg=self.text_color)
+        self.no_users_label.pack(pady=5, anchor="w")
+        
+        # User info
+        self.user_frame = tk.Frame(self.sidebar, bg="#292b2f", height=40)
+        self.user_frame.pack(side="bottom", fill="x")
+        
+        self.user_label = tk.Label(self.user_frame, text=self.username, 
+                                  font=("Arial", 10), 
+                                  bg="#292b2f", fg=self.text_color)
+        self.user_label.pack(pady=10, padx=10, anchor="w")
+        
+        # Chat area
+        self.chat_frame = tk.Frame(self.main_frame, bg=self.bg_color)
+        self.chat_frame.grid(row=0, column=1, sticky="nsew")
+        self.chat_frame.columnconfigure(0, weight=1)
+        self.chat_frame.rowconfigure(0, weight=1)
+        
+        # Chat history
+        # Chat history
+        self.chat_history = scrolledtext.ScrolledText(self.chat_frame, 
+                                                    wrap=tk.WORD,
+                                                    bg=self.bg_color,
+                                                    fg=self.text_color,
+                                                    font=("Arial", 10),
+                                                    bd=0,
+                                                    insertbackground=self.text_color)
+        self.chat_history.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 5))
+        self.chat_history.config(state=tk.DISABLED)  # Read-only
+        
+        # Message input area
+        self.input_frame = tk.Frame(self.chat_frame, bg=self.bg_color)
+        self.input_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
+        self.input_frame.columnconfigure(0, weight=1)
+        
+        self.message_input = tk.Entry(self.input_frame, 
+                                    bg=self.input_bg,
+                                    fg=self.text_color,
+                                    font=("Arial", 10),
+                                    bd=0,
+                                    insertbackground=self.text_color)
+        self.message_input.grid(row=0, column=0, sticky="ew", ipady=5, padx=(0, 5))
+        self.message_input.bind("<Return>", self.send_message)
+        
+        self.send_button = tk.Button(self.input_frame, 
+                                    text="Send",
+                                    bg=self.accent_color,
+                                    fg="white",
+                                    bd=0,
+                                    command=self.send_message)
+        self.send_button.grid(row=0, column=1)
+        
+    def update_voice_user_list(self, voice_users):
+        """Update the list of users in voice chat with their status"""
+        # Clear existing user labels first
+        for label in self.voice_user_labels.values():
+            label.destroy()
+        self.voice_user_labels = {}
+        
+        # Hide or show the "no users" label
+        if not voice_users:
+            self.no_users_label.pack(pady=5, anchor="w")
         else:
-            await ctx.send(f"All warnings have been cleared for {member}.")
+            self.no_users_label.pack_forget()
         
-        # Log the action
-        await ModUtils.create_mod_log(
-            guild=ctx.guild,
-            moderator=ctx.author,
-            target=member,
-            action="CLEARWARN",
-            reason=f"Cleared {'all warnings' if index is None else f'warning #{index+1}'}"
-        )
+        # Add all current users
+        for username, status in voice_users.items():
+            # Set color based on status - red for muted, normal text color for active
+            text_color = self.muted_color if status == "muted" else self.text_color
+            
+            # Create label with username and proper microphone icon
+            icon = "🎙️" if status == "active" else "🔇"
+            user_label = tk.Label(
+                self.voice_users_frame,
+                text=f"{icon} {username}",
+                font=("Arial", 9),
+                bg=self.sidebar_color,
+                fg=text_color,
+                anchor="w"
+            )
+            user_label.pack(pady=2, fill="x", anchor="w")
+            self.voice_user_labels[username] = user_label
     
-    @commands.command(name="purge", help="Delete multiple messages from a channel")
-    @commands.has_permissions(manage_messages=True)
-    @commands.bot_has_permissions(manage_messages=True)
-    async def purge(self, ctx, amount: int, user: discord.Member = None):
-        """Delete multiple messages from a channel."""
-        if amount <= 0 or amount > 100:
-            return await ctx.send("Please specify a number between 1 and 100.")
+    def setup_network(self):
+        # Create text chat client
+        self.client = ChatClient(self.server_host, PORT, self.username)
         
-        # Delete the command message
-        await ctx.message.delete()
+        # Start server if needed
+        if self.running_server:
+            self.start_server()
         
-        # Define a check if a user is provided
-        def check(message):
-            return user is None or message.author == user
+        # Connect to the server
+        self.connect_to_server()
         
-        # Delete messages
-        deleted = await ctx.channel.purge(limit=amount, check=check)
+        # We don't create the voice client until the user joins voice chat
+        self.in_voice_chat = False
+        self.voice_client = None
+    
+    def start_server(self):
+        # Start chat server
+        self.chat_server = ChatServer(HOST, PORT)
+        self.chat_server_thread = threading.Thread(target=self.chat_server.start, daemon=True)
+        self.chat_server_thread.start()
         
-        # Send confirmation (delete after 5 seconds)
-        message = await ctx.send(f"Deleted {len(deleted)} message(s).")
-        await asyncio.sleep(5)
-        await message.delete()
+        # Start voice server
+        self.voice_server = VoiceServer(HOST, VOICE_PORT)
+        self.voice_server_thread = threading.Thread(target=self.voice_server.start, daemon=True)
+        self.voice_server_thread.start()
         
-        # Log the action
-        if user:
-            reason = f"Purged {len(deleted)} message(s) from {user} in #{ctx.channel.name}"
+        self.add_system_message(f"Server running on {self.server_host}:{PORT}")
+    
+    def connect_to_server(self):
+        if self.client.connect():
+            self.receive_thread = threading.Thread(target=self.client.receive_messages, 
+                                                 args=(self.on_message_received,),
+                                                 daemon=True)
+            self.receive_thread.start()
+            
+            self.add_system_message(f"Connected to server as {self.username}")
         else:
-            reason = f"Purged {len(deleted)} message(s) in #{ctx.channel.name}"
-        
-        await ModUtils.create_mod_log(
-            guild=ctx.guild,
-            moderator=ctx.author,
-            target=ctx.author,  # placeholder since there's no specific target
-            action="PURGE",
-            reason=reason
-        )
+            self.add_system_message("Failed to connect to server")
     
-    @commands.command(name="lockdown", help="Lock down a channel")
-    @commands.has_permissions(manage_channels=True)
-    @commands.bot_has_permissions(manage_channels=True)
-    async def lockdown(self, ctx, channel: discord.TextChannel = None, *, reason=None):
-        """Lock down a channel by disabling the send messages permission for @everyone."""
-        channel = channel or ctx.channel
-        
-        if reason is None:
-            reason = "No reason provided"
-        
-        # Lock the channel
-        try:
-            # Get @everyone role
-            everyone_role = ctx.guild.default_role
-            
-            # Update permissions
-            await channel.set_permissions(everyone_role, send_messages=False, reason=f"[{ctx.author}] {reason}")
-            
-            embed = discord.Embed(
-                title="🔒 Channel Locked",
-                description=f"This channel has been locked by {ctx.author.mention}.",
-                color=discord.Color.red(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            embed.add_field(name="Reason", value=reason)
-            embed.set_footer(text="Only staff members can send messages")
-            
-            await channel.send(embed=embed)
-            
-            # Log the action
-            await ModUtils.create_mod_log(
-                guild=ctx.guild,
-                moderator=ctx.author,
-                target=ctx.author,  # placeholder
-                action="LOCKDOWN",
-                reason=f"Locked channel {channel.name}: {reason}"
-            )
-        except Exception as e:
-            await ctx.send(f"Failed to lock channel: {e}")
+    def add_system_message(self, message):
+        """Add a system message to the chat history"""
+        self.chat_history.config(state=tk.NORMAL)
+        self.chat_history.insert(tk.END, f"\n--- {message} ---\n")
+        self.chat_history.see(tk.END)
+        self.chat_history.config(state=tk.DISABLED)
     
-    @commands.command(name="unlock", help="Unlock a locked channel")
-    @commands.has_permissions(manage_channels=True)
-    @commands.bot_has_permissions(manage_channels=True)
-    async def unlock(self, ctx, channel: discord.TextChannel = None, *, reason=None):
-        """Unlock a channel by enabling the send messages permission for @everyone."""
-        channel = channel or ctx.channel
-        
-        if reason is None:
-            reason = "No reason provided"
-        
-        # Unlock the channel
-        try:
-            # Get @everyone role
-            everyone_role = ctx.guild.default_role
-            
-            # Reset permissions
-            await channel.set_permissions(everyone_role, send_messages=None, reason=f"[{ctx.author}] {reason}")
-            
-            embed = discord.Embed(
-                title="🔓 Channel Unlocked",
-                description=f"This channel has been unlocked by {ctx.author.mention}.",
-                color=discord.Color.green(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            embed.add_field(name="Reason", value=reason)
-            
-            await channel.send(embed=embed)
-            
-            # Log the action
-            await ModUtils.create_mod_log(
-                guild=ctx.guild,
-                moderator=ctx.author,
-                target=ctx.author,  # placeholder
-                action="UNLOCK",
-                reason=f"Unlocked channel {channel.name}: {reason}"
-            )
-        except Exception as e:
-            await ctx.send(f"Failed to unlock channel: {e}")
+    def on_message_received(self, message):
+        """Handle received messages from the server"""
+        self.chat_history.config(state=tk.NORMAL)
+        self.chat_history.insert(tk.END, f"{message}\n")
+        self.chat_history.see(tk.END)
+        self.chat_history.config(state=tk.DISABLED)
     
-    @commands.command(name="slowmode", help="Set slowmode for a channel")
-    @commands.has_permissions(manage_channels=True)
-    @commands.bot_has_permissions(manage_channels=True)
-    async def slowmode(self, ctx, seconds: int, channel: discord.TextChannel = None, *, reason=None):
-        """Set slowmode for a channel."""
-        channel = channel or ctx.channel
-        
-        if seconds < 0 or seconds > 21600:
-            return await ctx.send("Slowmode must be between 0 and 21600 seconds (6 hours).")
-        
-        if reason is None:
-            reason = "No reason provided"
-        
-        # Set slowmode
-        try:
-            await channel.edit(slowmode_delay=seconds, reason=f"[{ctx.author}] {reason}")
-            
-            if seconds == 0:
-                embed = discord.Embed(
-                    title="Slowmode Disabled",
-                    description=f"Slowmode has been disabled in {channel.mention}.",
-                    color=discord.Color.green(),
-                    timestamp=datetime.datetime.now()
-                )
+    def send_message(self, event=None):
+        """Send a message to the chat"""
+        message = self.message_input.get().strip()
+        if message:
+            if self.client.send_message(message):
+                # Clear input field
+                self.message_input.delete(0, tk.END)
             else:
-                embed = discord.Embed(
-                    title="Slowmode Enabled",
-                    description=f"Slowmode has been set to {seconds} seconds in {channel.mention}.",
-                    color=discord.Color.blue(),
-                    timestamp=datetime.datetime.now()
-                )
-            
-            embed.add_field(name="Reason", value=reason)
-            
-            await ctx.send(embed=embed)
-            
-            # Log the action
-            action = "SLOWMODE_DISABLE" if seconds == 0 else "SLOWMODE"
-            description = f"Disabled slowmode in {channel.name}" if seconds == 0 else f"Set slowmode to {seconds}s in {channel.name}"
-            
-            await ModUtils.create_mod_log(
-                guild=ctx.guild,
-                moderator=ctx.author,
-                target=ctx.author,  # placeholder
-                action=action,
-                reason=f"{description}: {reason}"
-            )
-        except Exception as e:
-            await ctx.send(f"Failed to set slowmode: {e}")
-
-class Configuration(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+                self.add_system_message("Failed to send message (not connected)")
     
-    @commands.command(name="prefix", help="Change the bot's command prefix for this server")
-    @commands.has_permissions(manage_guild=True)
-    async def prefix(self, ctx, new_prefix=None):
-        """Change the bot's command prefix for this server."""
-        if new_prefix is None:
-            guild_data = Database.get_guild_data(ctx.guild.id)
-            current_prefix = guild_data.get("prefix", BOT_PREFIX)
+    def toggle_voice(self):
+        """Toggle joining/leaving voice chat"""
+        if not hasattr(self, 'in_voice_chat') or not self.in_voice_chat:
+            # Join voice chat
+            if not hasattr(self, 'voice_client') or self.voice_client is None:
+                self.voice_client = VoiceClient(self.server_host, VOICE_PORT, self.username)
+                # Set the callback for voice status updates
+                self.voice_client.set_status_callback(self.update_voice_user_list)
             
-            return await ctx.send(f"Current prefix: `{current_prefix}`")
-        
-        if len(new_prefix) > 5:
-            return await ctx.send("Prefix must be 5 characters or less.")
-        
-        # Update guild data
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        guild_data["prefix"] = new_prefix
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        await ctx.send(f"Prefix changed to: `{new_prefix}`")
-    
-    @commands.command(name="setmodlog", help="Set the moderation log channel")
-    @commands.has_permissions(manage_guild=True)
-    async def setmodlog(self, ctx, channel: discord.TextChannel = None):
-        """Set the moderation log channel."""
-        if channel is None:
-            guild_data = Database.get_guild_data(ctx.guild.id)
-            current_channel_id = guild_data.get("mod_log_channel")
-            
-            if current_channel_id:
-                current_channel = ctx.guild.get_channel(current_channel_id)
-                if current_channel:
-                    return await ctx.send(f"Current moderation log channel: {current_channel.mention}")
-                else:
-                    return await ctx.send("No moderation log channel is set or the channel no longer exists.")
-            else:
-                return await ctx.send("No moderation log channel is set.")
-        
-        # Update guild data
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        guild_data["mod_log_channel"] = channel.id
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        await ctx.send(f"Moderation log channel set to: {channel.mention}")
-    
-    @commands.command(name="setwelcome", help="Set the welcome channel")
-    @commands.has_permissions(manage_guild=True)
-    async def setwelcome(self, ctx, channel: discord.TextChannel = None):
-        """Set the welcome channel."""
-        if channel is None:
-            guild_data = Database.get_guild_data(ctx.guild.id)
-            current_channel_id = guild_data.get("welcome_channel")
-            
-            if current_channel_id:
-                current_channel = ctx.guild.get_channel(current_channel_id)
-                if current_channel:
-                    return await ctx.send(f"Current welcome channel: {current_channel.mention}")
-                else:
-                    return await ctx.send("No welcome channel is set or the channel no longer exists.")
-            else:
-                return await ctx.send("No welcome channel is set.")
-        
-        # Update guild data
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        guild_data["welcome_channel"] = channel.id
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        await ctx.send(f"Welcome channel set to: {channel.mention}")
-    
-    @commands.command(name="welcomemsg", help="Set the welcome message")
-    @commands.has_permissions(manage_guild=True)
-    async def welcomemsg(self, ctx, *, message=None):
-        """Set the welcome message for new members."""
-        if message is None:
-            guild_data = Database.get_guild_data(ctx.guild.id)
-            current_message = guild_data.get("welcome_message", "Welcome to the server, {user}!")
-            
-            embed = discord.Embed(
-                title="Current Welcome Message",
-                description=current_message,
-                color=discord.Color.blue(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            embed.add_field(name="Available Placeholders", value="{user} - User mention\n{username} - Username\n{server} - Server name")
-            
-            return await ctx.send(embed=embed)
-        
-        # Update guild data
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        guild_data["welcome_message"] = message
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        # Show preview
-        preview = message.replace("{user}", ctx.author.mention) \
-                        .replace("{username}", ctx.author.name) \
-                        .replace("{server}", ctx.guild.name)
-        
-        embed = discord.Embed(
-            title="Welcome Message Updated",
-            description="Your welcome message has been updated.",
-            color=discord.Color.green(),
-            timestamp=datetime.datetime.now()
-        )
-        
-        embed.add_field(name="Message", value=message, inline=False)
-        embed.add_field(name="Preview", value=preview, inline=False)
-        
-        await ctx.send(embed=embed)
-    
-    @commands.command(name="leavemsg", help="Set the leave message")
-    @commands.has_permissions(manage_guild=True)
-    async def leavemsg(self, ctx, *, message=None):
-        """Set the leave message for members who leave the server."""
-        if message is None:
-            guild_data = Database.get_guild_data(ctx.guild.id)
-            current_message = guild_data.get("leave_message", "Goodbye, {user}!")
-            
-            embed = discord.Embed(
-                title="Current Leave Message",
-                description=current_message,
-                color=discord.Color.blue(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            embed.add_field(name="Available Placeholders", value="{user} - Username\n{username} - Username\n{server} - Server name")
-            
-            return await ctx.send(embed=embed)
-        
-        # Update guild data
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        guild_data["leave_message"] = message
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        # Show preview
-        preview = message.replace("{user}", ctx.author.name) \
-                        .replace("{username}", ctx.author.name) \
-                        .replace("{server}", ctx.guild.name)
-        
-        embed = discord.Embed(
-            title="Leave Message Updated",
-            description="Your leave message has been updated.",
-            color=discord.Color.green(),
-            timestamp=datetime.datetime.now()
-        )
-        
-        embed.add_field(name="Message", value=message, inline=False)
-        embed.add_field(name="Preview", value=preview, inline=False)
-        
-        await ctx.send(embed=embed)
-    
-    @commands.command(name="autorole", help="Set the autorole for new members")
-    @commands.has_permissions(manage_roles=True)
-    @commands.bot_has_permissions(manage_roles=True)
-    async def autorole(self, ctx, role: discord.Role = None):
-        """Set the autorole for new members."""
-        if role is None:
-            guild_data = Database.get_guild_data(ctx.guild.id)
-            current_role_id = guild_data.get("autorole")
-            
-            if current_role_id:
-                current_role = ctx.guild.get_role(current_role_id)
-                if current_role:
-                    return await ctx.send(f"Current autorole: {current_role.mention}")
-                else:
-                    return await ctx.send("No autorole is set or the role no longer exists.")
-            else:
-                return await ctx.send("No autorole is set.")
-        
-        # Check if the role is higher than the bot's highest role
-        if role >= ctx.guild.me.top_role:
-            return await ctx.send("I cannot assign this role as it is higher than or equal to my highest role.")
-        
-        # Update guild data
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        guild_data["autorole"] = role.id
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        await ctx.send(f"Autorole set to: {role.mention}")
-    
-    @commands.command(name="disableautorole", help="Disable the autorole")
-    @commands.has_permissions(manage_roles=True)
-    async def disableautorole(self, ctx):
-        """Disable the autorole for new members."""
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        
-        if "autorole" not in guild_data or guild_data["autorole"] is None:
-            return await ctx.send("Autorole is already disabled.")
-        
-        # Update guild data
-        guild_data["autorole"] = None
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        await ctx.send("Autorole has been disabled.")
-    
-    @commands.group(name="automod", help="Configure automod settings")
-    @commands.has_permissions(manage_guild=True)
-    async def automod(self, ctx):
-        """Configure automod settings."""
-        if ctx.invoked_subcommand is None:
-            guild_data = Database.get_guild_data(ctx.guild.id)
-            automod = guild_data.get("automod", {})
-            
-            embed = discord.Embed(
-                title="AutoMod Settings",
-                color=discord.Color.blue(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            status = "Enabled" if automod.get("enabled", False) else "Disabled"
-            embed.add_field(name="Status", value=status, inline=False)
-            
-            word_filter = "Enabled" if automod.get("banned_words", []) else "No banned words"
-            embed.add_field(name="Word Filter", value=word_filter, inline=True)
-            
-            spam_detection = "Enabled" if automod.get("spam_detection", False) else "Disabled"
-            embed.add_field(name="Spam Detection", value=spam_detection, inline=True)
-            
-            caps_filter = "Enabled" if automod.get("caps_filter", False) else "Disabled"
-            embed.add_field(name="Caps Filter", value=caps_filter, inline=True)
-            
-            mention_limit = automod.get("mention_limit", 5)
-            embed.add_field(name="Mention Limit", value=str(mention_limit), inline=True)
-            
-            embed.set_footer(text=f"Use {ctx.prefix}help automod for more info")
-            
-            await ctx.send(embed=embed)
-    
-    @automod.command(name="toggle", help="Toggle automod on/off")
-    async def automod_toggle(self, ctx):
-        """Toggle automod on/off."""
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        
-        if "automod" not in guild_data:
-            guild_data["automod"] = {}
-        
-        guild_data["automod"]["enabled"] = not guild_data["automod"].get("enabled", False)
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        status = "enabled" if guild_data["automod"]["enabled"] else "disabled"
-        await ctx.send(f"AutoMod has been {status}.")
-    
-    @automod.command(name="wordfilter", help="Add or remove words from the word filter")
-    async def automod_wordfilter(self, ctx, action: str, *, word=None):
-        """Add or remove words from the word filter."""
-        if action.lower() not in ["add", "remove", "list"]:
-            return await ctx.send("Invalid action. Use 'add', 'remove', or 'list'.")
-        
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        
-        if "automod" not in guild_data:
-            guild_data["automod"] = {}
-        
-        if "banned_words" not in guild_data["automod"]:
-            guild_data["automod"]["banned_words"] = []
-        
-        if action.lower() == "list":
-            if not guild_data["automod"]["banned_words"]:
-                return await ctx.send("No banned words configured.")
-            
-            # DM the list to avoid public display of banned words
-            banned_words = "\n".join(guild_data["automod"]["banned_words"])
-            
-            try:
-                embed = discord.Embed(
-                    title="Banned Words List",
-                    description=banned_words,
-                    color=discord.Color.blue(),
-                    timestamp=datetime.datetime.now()
-                )
+            if self.voice_client.connect():
+                self.in_voice_chat = True
+                self.voice_btn.config(text="Leave", bg=self.muted_color)
                 
-                await ctx.author.send(embed=embed)
-                await ctx.send("I've sent you the list of banned words via DM.")
-            except:
-                await ctx.send("I couldn't send you a DM. Please check your privacy settings.")
-        
-        elif action.lower() == "add":
-            if word is None:
-                return await ctx.send("Please specify a word to add.")
-            
-            if word.lower() in guild_data["automod"]["banned_words"]:
-                return await ctx.send("This word is already in the banned words list.")
-            
-            guild_data["automod"]["banned_words"].append(word.lower())
-            Database.save_guild_data(ctx.guild.id, guild_data)
-            
-            await ctx.send(f"Added `{word}` to the banned words list.")
-        
-        elif action.lower() == "remove":
-            if word is None:
-                return await ctx.send("Please specify a word to remove.")
-            
-            if word.lower() not in guild_data["automod"]["banned_words"]:
-                return await ctx.send("This word is not in the banned words list.")
-            
-            guild_data["automod"]["banned_words"].remove(word.lower())
-            Database.save_guild_data(ctx.guild.id, guild_data)
-            
-            await ctx.send(f"Removed `{word}` from the banned words list.")
-    
-    @automod.command(name="spam", help="Toggle spam detection")
-    async def automod_spam(self, ctx):
-        """Toggle spam detection."""
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        
-        if "automod" not in guild_data:
-            guild_data["automod"] = {}
-        
-        guild_data["automod"]["spam_detection"] = not guild_data["automod"].get("spam_detection", False)
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        status = "enabled" if guild_data["automod"]["spam_detection"] else "disabled"
-        await ctx.send(f"Spam detection has been {status}.")
-    
-    @automod.command(name="caps", help="Toggle caps filter")
-    async def automod_caps(self, ctx):
-        """Toggle caps filter."""
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        
-        if "automod" not in guild_data:
-            guild_data["automod"] = {}
-        
-        guild_data["automod"]["caps_filter"] = not guild_data["automod"].get("caps_filter", False)
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        status = "enabled" if guild_data["automod"]["caps_filter"] else "disabled"
-        await ctx.send(f"Caps filter has been {status}.")
-    
-    @automod.command(name="mentions", help="Set mention limit")
-    async def automod_mentions(self, ctx, limit: int = None):
-        """Set mention limit."""
-        if limit is None:
-            guild_data = Database.get_guild_data(ctx.guild.id)
-            current_limit = guild_data.get("automod", {}).get("mention_limit", 5)
-            
-            return await ctx.send(f"Current mention limit: {current_limit}")
-        
-        if limit < 1 or limit > 20:
-            return await ctx.send("Mention limit must be between 1 and 20.")
-        
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        
-        if "automod" not in guild_data:
-            guild_data["automod"] = {}
-        
-        guild_data["automod"]["mention_limit"] = limit
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        await ctx.send(f"Mention limit set to {limit}.")
-    
-    @commands.group(name="antiraid", help="Configure anti-raid settings")
-    @commands.has_permissions(manage_guild=True)
-    async def antiraid(self, ctx):
-        """Configure anti-raid settings."""
-        if ctx.invoked_subcommand is None:
-            guild_data = Database.get_guild_data(ctx.guild.id)
-            anti_raid = guild_data.get("anti_raid", {})
-            
-            embed = discord.Embed(
-                title="Anti-Raid Settings",
-                color=discord.Color.blue(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            status = "Enabled" if anti_raid.get("enabled", False) else "Disabled"
-            embed.add_field(name="Status", value=status, inline=False)
-            
-            active = "ACTIVE" if anti_raid.get("active", False) else "Inactive"
-            embed.add_field(name="Raid Mode", value=active, inline=True)
-            
-            threshold = anti_raid.get("threshold", 10)
-            embed.add_field(name="Join Threshold", value=f"{threshold} joins/minute", inline=True)
-            
-            verification_role_id = anti_raid.get("verification_role")
-            verification_role = ctx.guild.get_role(verification_role_id) if verification_role_id else None
-            verification_role_str = verification_role.mention if verification_role else "Not set"
-            embed.add_field(name="Verification Role", value=verification_role_str, inline=True)
-            
-            embed.set_footer(text=f"Use {ctx.prefix}help antiraid for more info")
-            
-            await ctx.send(embed=embed)
-    
-    @antiraid.command(name="toggle", help="Toggle anti-raid on/off")
-    async def antiraid_toggle(self, ctx):
-        """Toggle anti-raid on/off."""
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        
-        if "anti_raid" not in guild_data:
-            guild_data["anti_raid"] = {}
-        
-        guild_data["anti_raid"]["enabled"] = not guild_data["anti_raid"].get("enabled", False)
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        status = "enabled" if guild_data["anti_raid"]["enabled"] else "disabled"
-        await ctx.send(f"Anti-raid has been {status}.")
-    
-    @antiraid.command(name="threshold", help="Set raid detection threshold")
-    async def antiraid_threshold(self, ctx, threshold: int = None):
-        """Set raid detection threshold (joins per minute)."""
-        if threshold is None:
-            guild_data = Database.get_guild_data(ctx.guild.id)
-            current_threshold = guild_data.get("anti_raid", {}).get("threshold", 10)
-            
-            return await ctx.send(f"Current raid detection threshold: {current_threshold} joins/minute")
-        
-        if threshold < 5 or threshold > 50:
-            return await ctx.send("Threshold must be between 5 and 50.")
-        
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        
-        if "anti_raid" not in guild_data:
-            guild_data["anti_raid"] = {}
-        
-        guild_data["anti_raid"]["threshold"] = threshold
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        await ctx.send(f"Raid detection threshold set to {threshold} joins/minute.")
-    
-    @antiraid.command(name="role", help="Set verification role for new members during raid mode")
-    async def antiraid_role(self, ctx, role: discord.Role = None):
-        """Set verification role for new members during raid mode."""
-        if role is None:
-            guild_data = Database.get_guild_data(ctx.guild.id)
-            role_id = guild_data.get("anti_raid", {}).get("verification_role")
-            
-            if role_id:
-                current_role = ctx.guild.get_role(role_id)
-                if current_role:
-                    return await ctx.send(f"Current verification role: {current_role.mention}")
-                else:
-                    return await ctx.send("No verification role is set or the role no longer exists.")
+                # Add mute toggle button
+                self.mute_btn = tk.Button(
+                    self.voice_btn_frame, 
+                    text="Mute", 
+                    bg=self.accent_color, 
+                    fg="white",
+                    command=self.toggle_mute
+                )
+                self.mute_btn.pack(side="right", padx=(5, 0))
+                
+                self.add_system_message("You joined voice chat")
             else:
-                return await ctx.send("No verification role is set.")
-        
-        # Check if the role is higher than the bot's highest role
-        if role >= ctx.guild.me.top_role:
-            return await ctx.send("I cannot assign this role as it is higher than or equal to my highest role.")
-        
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        
-        if "anti_raid" not in guild_data:
-            guild_data["anti_raid"] = {}
-        
-        guild_data["anti_raid"]["verification_role"] = role.id
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        await ctx.send(f"Verification role set to: {role.mention}")
-    
-    @antiraid.command(name="enable", help="Manually enable raid mode")
-    async def antiraid_enable(self, ctx):
-        """Manually enable raid mode."""
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        
-        if "anti_raid" not in guild_data:
-            guild_data["anti_raid"] = {}
-        
-        if guild_data["anti_raid"].get("active", False):
-            return await ctx.send("Raid mode is already active.")
-        
-        guild_data["anti_raid"]["active"] = True
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        embed = discord.Embed(
-            title="⚠️ RAID MODE ENABLED",
-            description="Raid mode has been manually enabled.",
-            color=discord.Color.red(),
-            timestamp=datetime.datetime.now()
-        )
-        
-        embed.add_field(name="Moderator", value=ctx.author.mention)
-        embed.add_field(name="Effects", value="New joins will require verification or be temporarily restricted.")
-        
-        await ctx.send(embed=embed)
-        
-        # Log the action
-        await ModUtils.create_mod_log(
-            guild=ctx.guild,
-            moderator=ctx.author,
-            target=ctx.author,  # placeholder
-            action="RAID_MODE",
-            reason="Manually enabled raid mode"
-        )
-    
-    @antiraid.command(name="disable", help="Manually disable raid mode")
-    async def antiraid_disable(self, ctx):
-        """Manually disable raid mode."""
-        guild_data = Database.get_guild_data(ctx.guild.id)
-        
-        if "anti_raid" not in guild_data:
-            guild_data["anti_raid"] = {}
-        
-        if not guild_data["anti_raid"].get("active", False):
-            return await ctx.send("Raid mode is not active.")
-        
-        guild_data["anti_raid"]["active"] = False
-        Database.save_guild_data(ctx.guild.id, guild_data)
-        
-        embed = discord.Embed(
-            title="Raid Mode Disabled",
-            description="Raid mode has been manually disabled.",
-            color=discord.Color.green(),
-            timestamp=datetime.datetime.now()
-        )
-        
-        embed.add_field(name="Moderator", value=ctx.author.mention)
-        
-        await ctx.send(embed=embed)
-        
-        # Log the action
-        await ModUtils.create_mod_log(
-            guild=ctx.guild,
-            moderator=ctx.author,
-            target=ctx.author,  # placeholder
-            action="RAID_MODE_DISABLE",
-            reason="Manually disabled raid mode"
-        )
-
-class Information(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-    
-    @commands.command(name="userinfo", help="Get information about a user")
-    async def userinfo(self, ctx, member: discord.Member = None):
-        """Get information about a user."""
-        member = member or ctx.author
-        
-        # Get user's roles (excluding @everyone)
-        roles = [role.mention for role in member.roles if role != ctx.guild.default_role]
-        roles_str = ", ".join(roles) if roles else "None"
-        
-        # Format join and creation dates
-        joined_at = member.joined_at.strftime("%Y-%m-%d %H:%M:%S") if member.joined_at else "Unknown"
-        created_at = member.created_at.strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Calculate account age
-        account_age_days = (datetime.datetime.now(datetime.timezone.utc) - member.created_at).days
-        
-        # Create embed
-        embed = discord.Embed(
-            title=f"User Information: {member.display_name}",
-            color=member.color,
-            timestamp=datetime.datetime.now()
-        )
-        
-        embed.set_thumbnail(url=member.display_avatar.url)
-        
-        embed.add_field(name="User ID", value=member.id, inline=True)
-        embed.add_field(name="Nickname", value=member.nick or "None", inline=True)
-        embed.add_field(name="Bot", value="Yes" if member.bot else "No", inline=True)
-        
-        embed.add_field(name="Account Age", value=f"{account_age_days} days", inline=True)
-        embed.add_field(name="Joined Server", value=joined_at, inline=True)
-        embed.add_field(name="Account Created", value=created_at, inline=True)
-        
-        if member.premium_since:
-            boosting_since = member.premium_since.strftime("%Y-%m-%d %H:%M:%S")
-            embed.add_field(name="Boosting Server Since", value=boosting_since, inline=True)
-        
-        if roles:
-            # Truncate if too many roles
-            if len(roles_str) > 1024:
-                roles_str = f"{len(roles)} roles (too many to display)"
-            
-            embed.add_field(name=f"Roles [{len(roles)}]", value=roles_str, inline=False)
-        
-        # Check if user has warnings
-        warnings = Database.get_warnings(ctx.guild.id, member.id)
-        if warnings:
-            embed.add_field(name="Warnings", value=str(len(warnings)), inline=True)
-        
-        embed.set_footer(text=f"Requested by {ctx.author}")
-        
-        await ctx.send(embed=embed)
-    
-    @commands.command(name="serverinfo", help="Get information about the server")
-    async def serverinfo(self, ctx):
-        """Get information about the server."""
-        guild = ctx.guild
-        
-        # Count members by status
-        online_members = sum(1 for member in guild.members if member.status == discord.Status.online)
-        idle_members = sum(1 for member in guild.members if member.status == discord.Status.idle)
-        dnd_members = sum(1 for member in guild.members if member.status == discord.Status.dnd)
-        offline_members = sum(1 for member in guild.members if member.status == discord.Status.offline)
-        
-        # Count channels by type
-        text_channels = len(guild.text_channels)
-        voice_channels = len(guild.voice_channels)
-        categories = len(guild.categories)
-        
-        # Create embed
-        embed = discord.Embed(
-            title=f"Server Information: {guild.name}",
-            color=discord.Color.blue(),
-            timestamp=datetime.datetime.now()
-        )
-        
-        if guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
-        
-        embed.add_field(name="Server ID", value=guild.id, inline=True)
-        embed.add_field(name="Owner", value=guild.owner.mention, inline=True)
-        embed.add_field(name="Region", value=str(guild.region).replace("-", " ").title() if hasattr(guild, "region") else "N/A", inline=True)
-        
-        embed.add_field(name="Created On", value=guild.created_at.strftime("%Y-%m-%d %H:%M:%S"), inline=True)
-        embed.add_field(name="Verification Level", value=str(guild.verification_level).title(), inline=True)
-        embed.add_field(name="Boost Tier", value=f"Level {guild.premium_tier}" if guild.premium_tier else "None", inline=True)
-        
-        embed.add_field(name="Total Members", value=guild.member_count, inline=True)
-        embed.add_field(name="Humans", value=sum(1 for member in guild.members if not member.bot), inline=True)
-        embed.add_field(name="Bots", value=sum(1 for member in guild.members if member.bot), inline=True)
-        
-        embed.add_field(name="Member Status", value=f"🟢 {online_members} 🟠 {idle_members} 🔴 {dnd_members} ⚫ {offline_members}", inline=False)
-        
-        embed.add_field(name="Channels", value=f"📝 Text: {text_channels}\n🔊 Voice: {voice_channels}\n📁 Categories: {categories}", inline=True)
-        embed.add_field(name="Roles", value=f"{len(guild.roles)} roles", inline=True)
-        embed.add_field(name="Emojis", value=f"{len(guild.emojis)}/{guild.emoji_limit} emojis", inline=True)
-        
-        if guild.premium_subscription_count:
-            embed.add_field(name="Boosts", value=f"{guild.premium_subscription_count} boosts", inline=True)
-        
-        await ctx.send(embed=embed)
-    
-    @commands.command(name="rolelist", help="List all roles in the server")
-    async def rolelist(self, ctx):
-        """List all roles in the server."""
-        roles = sorted(ctx.guild.roles, key=lambda x: x.position, reverse=True)
-        
-        embed = discord.Embed(
-            title=f"Roles in {ctx.guild.name}",
-            description=f"Total roles: {len(roles)}",
-            color=discord.Color.blue(),
-            timestamp=datetime.datetime.now()
-        )
-        
-        # Split roles into chunks to avoid hitting character limits
-        role_chunks = []
-        current_chunk = ""
-        
-        for role in roles:
-            role_line = f"{role.mention} ({len(role.members)} members)\n"
-            
-            if len(current_chunk) + len(role_line) > 1024:
-                role_chunks.append(current_chunk)
-                current_chunk = role_line
-            else:
-                current_chunk += role_line
-        
-        if current_chunk:
-            role_chunks.append(current_chunk)
-        
-        # Add each chunk as a field
-        for i, chunk in enumerate(role_chunks):
-            embed.add_field(name=f"Roles (Part {i+1})", value=chunk, inline=False)
-
-        return embed
-
-@bot.command()
-async def server(ctx):
-    """Display server information"""
-    server = ctx.guild
-    
-    # Get server information
-    created_at = server.created_at.strftime("%Y-%m-%d")
-    member_count = server.member_count
-    role_count = len(server.roles)
-    text_channels = len([c for c in server.channels if isinstance(c, discord.TextChannel)])
-    voice_channels = len([c for c in server.channels if isinstance(c, discord.VoiceChannel)])
-    
-    # Create embed
-    embed = discord.Embed(
-        title=f"{server.name} Information",
-        description=f"Server ID: {server.id}",
-        color=discord.Color.blue()
-    )
-    
-    # Add server icon if it exists
-    if server.icon:
-        embed.set_thumbnail(url=server.icon.url)
-    
-    # Add fields with server information
-    embed.add_field(name="Created On", value=created_at, inline=True)
-    embed.add_field(name="Members", value=str(member_count), inline=True)
-    embed.add_field(name="Roles", value=str(role_count), inline=True)
-    embed.add_field(name="Text Channels", value=str(text_channels), inline=True)
-    embed.add_field(name="Voice Channels", value=str(voice_channels), inline=True)
-    
-    # Add server owner
-    embed.add_field(name="Owner", value=server.owner.mention, inline=True)
-    
-    # Add footer
-    embed.set_footer(text=f"Requested by {ctx.author}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
-    
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def userinfo(ctx, member: discord.Member = None):
-    """Display information about a user"""
-    # If no member is specified, use the command author
-    if member is None:
-        member = ctx.author
-    
-    # Get user information
-    joined_at = member.joined_at.strftime("%Y-%m-%d")
-    created_at = member.created_at.strftime("%Y-%m-%d")
-    
-    # Create embed
-    embed = discord.Embed(
-        title=f"{member.name} Information",
-        description=f"User ID: {member.id}",
-        color=member.color
-    )
-    
-    # Add user avatar if it exists
-    if member.avatar:
-        embed.set_thumbnail(url=member.avatar.url)
-    
-    # Add fields with user information
-    embed.add_field(name="Joined Server", value=joined_at, inline=True)
-    embed.add_field(name="Account Created", value=created_at, inline=True)
-    
-    # Add roles (excluding @everyone)
-    roles = [role.mention for role in member.roles if role.name != "@everyone"]
-    roles_text = ", ".join(roles) if roles else "No roles"
-    
-    # Check if roles text is too long
-    if len(roles_text) <= 1024:
-        embed.add_field(name="Roles", value=roles_text, inline=False)
-    else:
-        # Split roles into multiple fields if too long
-        chunks = []
-        current_chunk = ""
-        
-        for role in roles:
-            if len(current_chunk + role + ", ") > 1024:
-                chunks.append(current_chunk[:-2])  # Remove trailing ", "
-                current_chunk = role + ", "
-            else:
-                current_chunk += role + ", "
-        
-        if current_chunk:
-            chunks.append(current_chunk[:-2])  # Remove trailing ", "
-        
-        for i, chunk in enumerate(chunks):
-            embed.add_field(name=f"Roles (Part {i+1})", value=chunk, inline=False)
-    
-    # Add footer
-    embed.set_footer(text=f"Requested by {ctx.author}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
-    
-    await ctx.send(embed=embed)
-
-bot.remove_command('help')
-
-@bot.command()
-async def help(ctx):
-    """Display help information about the bot commands"""
-    embed = discord.Embed(
-        title="Bot Commands",
-        description="Here are the available commands:",
-        color=discord.Color.green()
-    )
-    
-    # Add command descriptions
-    embed.add_field(name="!ping", value="Check if the bot is responsive", inline=False)
-    embed.add_field(name="!server", value="Display information about the server", inline=False)
-    embed.add_field(name="!userinfo [member]", value="Display information about a user (or yourself if no user is specified)", inline=False)
-    embed.add_field(name="!roles", value="Display all roles in the server", inline=False)
-    embed.add_field(name="!purge [amount]", value="Delete a specified number of messages (default: 5)", inline=False)
-    
-    
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def purge(ctx, amount: int = 5):
-    """Delete a specified number of messages"""
-    if amount <= 0:
-        await ctx.send("Please specify a positive number of messages to delete.")
-        return
-    
-    if amount > 100:
-        await ctx.send("You can only delete up to 100 messages at once.")
-        return
-    
-    # Delete messages
-    deleted = await ctx.channel.purge(limit=amount + 1)  # +1 to include the command message
-    
-    # Send confirmation message
-    confirmation = await ctx.send(f"Deleted {len(deleted) - 1} messages.")
-    
-    # Delete confirmation message after 5 seconds
-    await asyncio.sleep(5)
-    await confirmation.delete()
-
-@bot.command()
-async def roles(ctx):
-    """Display all roles in the server"""
-    server = ctx.guild
-    
-    # Get all roles except @everyone
-    roles = [role for role in server.roles if role.name != "@everyone"]
-    
-    # Sort roles by position (highest first)
-    roles.sort(reverse=True, key=lambda x: x.position)
-    
-    embed = discord.Embed(
-        title=f"Roles in {server.name}",
-        description=f"Total: {len(roles)} roles",
-        color=discord.Color.gold()
-    )
-    
-    # Check if we need to split the roles into multiple fields
-    roles_text = ""
-    for role in roles:
-        role_text = f"{role.mention} ({len(role.members)} members)\n"
-        
-        # If adding this role would exceed the field limit, create a new field
-        if len(roles_text + role_text) > 1024:
-            embed.add_field(name="Roles", value=roles_text, inline=False)
-            roles_text = role_text
+                self.add_system_message("Failed to join voice chat")
         else:
-            roles_text += role_text
+            # Leave voice chat
+            if hasattr(self, 'voice_client') and self.voice_client:
+                self.voice_client.close()
+            
+            self.in_voice_chat = False
+            self.voice_btn.config(text="Join", bg=self.accent_color)
+            
+            # Remove mute button
+            if hasattr(self, 'mute_btn') and self.mute_btn:
+                self.mute_btn.destroy()
+                
+            # Clear voice users display
+            for label in self.voice_user_labels.values():
+                label.destroy()
+            self.voice_user_labels = {}
+            self.no_users_label.pack(pady=5, anchor="w")
+            
+            self.add_system_message("You left voice chat")
     
-    # Add any remaining roles
-    if roles_text:
-        embed.add_field(name="Roles", value=roles_text, inline=False)
+    def toggle_mute(self):
+        """Toggle microphone mute status"""
+        if hasattr(self, 'voice_client') and self.voice_client and self.in_voice_chat:
+            is_transmitting = self.voice_client.toggle_mute()
+            
+            if is_transmitting:
+                self.mute_btn.config(text="Mute", bg=self.accent_color)
+                self.add_system_message("Microphone unmuted")
+            else:
+                self.mute_btn.config(text="Unmute", bg=self.muted_color)
+                self.add_system_message("Microphone muted")
     
-    await ctx.send(embed=embed)
+    def on_closing(self):
+        """Handle window closing event"""
+        # Stop client connections
+        if hasattr(self, 'client'):
+            self.client.close()
+        
+        if hasattr(self, 'voice_client') and self.voice_client:
+            self.voice_client.close()
+        
+        # Stop servers if running
+        if hasattr(self, 'chat_server_thread') and self.chat_server_thread.is_alive():
+            self.chat_server.stop()
+            
+        if hasattr(self, 'voice_server_thread') and self.voice_server_thread.is_alive():
+            self.voice_server.stop()
+        
+        # Destroy the window
+        self.root.destroy()
 
-# Run the bot with token
-bot.run(TOKEN)</h1>
+# Main function to run the app
+def main():
+    root = tk.Tk()
+    app = DiscordCloneApp(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()</h1>
 </body>
 </html>
