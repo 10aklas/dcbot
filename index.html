@@ -3,1144 +3,1712 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-</head>
-<body>
-    <h1>import socket
-import threading
-import tkinter as tk
-from tkinter import scrolledtext, ttk
-import random
-import json
-import os
-import pyaudio
-import time
-import struct
-from tkinter import messagebox
+    <title>Emerald - Anonymous P2P Chat</title>
+    <style>
+        :root {
+            --primary: #2ecc71;
+            --primary-dark: #27ae60;
+            --secondary: #1abc9c;
+            --dark: #1a1a1a;
+            --darker: #121212;
+            --light-text: #e0e0e0;
+            --mid-gray: #333333;
+            --card-bg: #222222;
+            --input-bg: #2c2c2c;
+            --message-sent: #2ecc71;
+            --message-received: #333333;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: var(--darker);
+            color: var(--light-text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        header {
+            background: var(--dark);
+            color: var(--primary);
+            padding: 1rem;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            border-bottom: 1px solid var(--primary-dark);
+        }
+        
+        .logo {
+            font-size: 2rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .content {
+            flex: 1;
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        
+        .intro {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .intro h2 {
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+        
+        .intro p {
+            color: var(--light-text);
+            max-width: 700px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 1rem 0;
+            gap: 10px;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #888;
+        }
+        
+        .status-dot.online {
+            background-color: var(--primary);
+            box-shadow: 0 0 8px var(--primary);
+        }
+        
+        .chat-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+            justify-content: center;
+            margin: 2rem 0;
+        }
+        
+        .option-card {
+            background: var(--card-bg);
+            border-radius: 10px;
+            padding: 2rem;
+            flex: 1;
+            min-width: 300px;
+            max-width: 500px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            border: 1px solid var(--mid-gray);
+        }
+        
+        .option-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+            border-color: var(--primary-dark);
+        }
+        
+        .option-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+        
+        .option-card h3 {
+            color: var(--light-text);
+            margin-bottom: 1rem;
+        }
+        
+        .option-card p {
+            color: #aaa;
+            margin-bottom: 1.5rem;
+            line-height: 1.5;
+        }
+        
+        .btn {
+            padding: 0.8rem 1.5rem;
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background: var(--primary);
+            color: var(--dark);
+        }
+        
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+        
+        .btn-secondary {
+            background: var(--secondary);
+            color: var(--dark);
+        }
+        
+        .btn-secondary:hover {
+            background: #16a085;
+        }
+        
+        .btn-outline {
+            background: transparent;
+            border: 2px solid var(--primary);
+            color: var(--primary);
+        }
+        
+        .btn-outline:hover {
+            background: var(--primary);
+            color: var(--dark);
+        }
 
-# Network settings
-HOST = '0.0.0.0'  # Server will listen on all interfaces
-PORT = 5555       # Text chat port
-VOICE_PORT = 5556 # Voice chat port
-CHUNK = 1024      # Audio chunk size
-FORMAT = pyaudio.paInt16
-CHANNELS = 1
-RATE = 44100
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            background: var(--dark);
+            padding: 2rem;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+            position: relative;
+            border: 1px solid var(--mid-gray);
+        }
+        
+        .close-modal {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #aaa;
+        }
+        
+        .close-modal:hover {
+            color: var(--primary);
+        }
+        
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        
+        .chat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 0;
+            border-bottom: 1px solid var(--mid-gray);
+            margin-bottom: 1rem;
+        }
+        
+        .username {
+            font-weight: bold;
+            color: var(--primary);
+        }
 
-# Generate a random username
-ADJECTIVES = ["Happy", "Sunny", "Brave", "Bright", "Cool", "Wild", "Smart", "Swift", "Epic", "Calm"]
-NOUNS = ["Tiger", "Dragon", "Phoenix", "Warrior", "Shark", "Eagle", "Wolf", "Bear", "Ninja", "Wizard"]
-COLORS = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange", "Pink", "Teal", "Gold", "Silver"]
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            background: var(--darker);
+            border-radius: 5px;
+            height: 300px;
+            margin-bottom: 1rem;
+            border: 1px solid var(--mid-gray);
+        }
+        
+        .message {
+            margin-bottom: 1rem;
+            padding: 0.8rem;
+            border-radius: 8px;
+            max-width: 80%;
+            word-break: break-word;
+        }
+        
+        .received {
+            background: var(--message-received);
+            align-self: flex-start;
+        }
+        
+        .sent {
+            background: var(--message-sent);
+            color: var(--dark);
+            align-self: flex-end;
+            margin-left: auto;
+        }
+        
+        .system-message {
+            background: transparent;
+            color: #888;
+            text-align: center;
+            font-style: italic;
+            margin: 0.5rem auto;
+            padding: 0.5rem;
+            max-width: 100%;
+        }
+        
+        .chat-input {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .chat-input input {
+            flex: 1;
+            padding: 0.8rem;
+            border: 1px solid var(--mid-gray);
+            border-radius: 5px;
+            background: var(--input-bg);
+            color: var(--light-text);
+        }
+        
+        .chat-input input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        
+        .join-room {
+            margin-top: 2rem;
+            text-align: center;
+        }
+        
+        .join-room h3 {
+            margin-bottom: 1rem;
+        }
+        
+        .join-form {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        
+        .join-form input {
+            flex: 1;
+            padding: 0.8rem;
+            border: 1px solid var(--mid-gray);
+            border-radius: 5px;
+            background: var(--input-bg);
+            color: var(--light-text);
+        }
+        
+        .join-form input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
 
-def generate_username():
-    return f"{random.choice(COLORS)}{random.choice(ADJECTIVES)}{random.choice(NOUNS)}"
+        .room-code {
+            background: var(--darker);
+            padding: 1rem;
+            border-radius: 5px;
+            margin: 1rem 0;
+            font-family: monospace;
+            font-size: 1.2rem;
+            letter-spacing: 2px;
+            text-align: center;
+            border: 1px solid var(--mid-gray);
+        }
+        
+        .copy-btn {
+            background: transparent;
+            border: none;
+            color: var(--primary);
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        
+        .waiting-animation {
+            display: flex;
+            justify-content: center;
+            margin: 1rem 0;
+        }
+        
+        .waiting-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--primary);
+            border-radius: 50%;
+            margin: 0 5px;
+            animation: pulse 1.5s infinite ease-in-out;
+        }
+        
+        .waiting-dot:nth-child(2) {
+            animation-delay: 0.3s;
+        }
+        
+        .waiting-dot:nth-child(3) {
+            animation-delay: 0.6s;
+        }
+        
+        .security-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            background: rgba(46, 204, 113, 0.1);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border: 1px solid rgba(46, 204, 113, 0.3);
+        }
+        
+        .security-badge svg {
+            color: var(--primary);
+        }
 
-# The main issue is likely in the VoiceClient class where audio processing happens
-# Let's enhance the voice functionality to make it work properly:
-
-class ChatClient:
-    def __init__(self, host, port, username):
-        self.host = host
-        self.port = port
-        self.username = username
-        self.socket = None
-        self.connected = False
+        .privacy-settings {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: var(--card-bg);
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
         
-    def connect(self):
-        try:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.connect((self.host, self.port))
-            
-            # Send join message
-            join_message = json.dumps({
-                "type": "join",
-                "username": self.username
-            })
-            self.socket.send(join_message.encode())
-            
-            self.connected = True
-            print(f"Connected to chat server at {self.host}:{self.port}")
-            return True
-        except Exception as e:
-            print(f"Failed to connect to server: {e}")
-            self.connected = False
-            return False
-    
-    def send_message(self, content):
-        if not self.connected or not self.socket:
-            return False
-            
-        try:
-            message = json.dumps({
-                "type": "message",
-                "username": self.username,
-                "content": content
-            })
-            self.socket.send(message.encode())
-            return True
-        except Exception as e:
-            print(f"Error sending message: {e}")
-            self.connected = False
-            return False
-    
-    def receive_messages(self, callback):
-        while self.connected:
-            try:
-                data = self.socket.recv(4096)
-                if not data:
-                    break
-                    
-                message = json.loads(data.decode())
-                
-                if message["type"] == "join":
-                    formatted_msg = f"--- {message['username']} has joined the chat ---"
-                    callback(formatted_msg)
-                    
-                elif message["type"] == "message":
-                    timestamp = time.strftime("%H:%M:%S")
-                    formatted_msg = f"[{timestamp}] {message['username']}: {message['content']}"
-                    callback(formatted_msg)
-                    
-                elif message["type"] == "leave":
-                    formatted_msg = f"--- {message['username']} has left the chat ---"
-                    callback(formatted_msg)
-                    
-            except Exception as e:
-                print(f"Error receiving message: {e}")
-                self.connected = False
-                break
-                
-        print("Disconnected from server")
-        self.connected = False
-    
-    def close(self):
-        if self.connected and self.socket:
-            try:
-                # Send leave message
-                leave_message = json.dumps({
-                    "type": "leave",
-                    "username": self.username
-                })
-                self.socket.send(leave_message.encode())
-                
-                # Close socket
-                self.socket.close()
-            except:
-                pass
-                
-        self.connected = False
-        self.socket = None
-
-class VoiceClient:
-    def __init__(self, host, port, username):
-        self.host = host
-        self.port = port
-        self.username = username
-        self.connected = False
-        self.transmitting = False
-        self.socket = None
-        self.voice_users = {}  # Store voice users and their status
-        self.status_callback = None  # Callback for voice user status updates
+        .privacy-settings h4 {
+            margin-bottom: 10px;
+            color: var(--primary);
+        }
         
-        # Initialize PyAudio
-        self.p = pyaudio.PyAudio()
-        self.input_stream = None
-        self.output_stream = None
-        self.transmit_thread = None
-        self.receive_thread = None
+        .setting-toggle {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
         
-    def set_status_callback(self, callback):
-        """Set callback function for voice user status updates"""
-        self.status_callback = callback
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
         
-    def connect(self):
-        try:
-            print(f"Connecting to voice server at {self.host}:{self.port}")
-            # Create a new PyAudio instance if needed
-            if not hasattr(self, 'p') or self.p is None:
-                self.p = pyaudio.PyAudio()
-            
-            # Close existing socket if present
-            if self.socket:
-                try:
-                    self.socket.close()
-                except:
-                    pass
-                
-            # Create new UDP socket
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            
-            # Create audio streams
-            if self.input_stream:
-                try:
-                    self.input_stream.stop_stream()
-                    self.input_stream.close()
-                except:
-                    pass
-                    
-            if self.output_stream:
-                try:
-                    self.output_stream.stop_stream()
-                    self.output_stream.close()
-                except:
-                    pass
-            
-            # Set smaller buffer size to reduce latency
-            self.input_stream = self.p.open(format=FORMAT,
-                                         channels=CHANNELS,
-                                         rate=RATE,
-                                         input=True,
-                                         frames_per_buffer=CHUNK)
-            
-            self.output_stream = self.p.open(format=FORMAT,
-                                          channels=CHANNELS,
-                                          rate=RATE,
-                                          output=True,
-                                          frames_per_buffer=CHUNK)
-            
-            print("Audio streams created successfully")
-            
-            # Send initial join packet to server
-            join_message = json.dumps({
-                "type": "join",
-                "username": self.username,
-                "status": "active"
-            }).encode()
-            self.socket.sendto(join_message, (self.host, self.port))
-            print(f"Sent join message to {self.host}:{self.port}")
-            
-            self.connected = True
-            
-            # Start receiving audio
-            if self.receive_thread is None or not self.receive_thread.is_alive():
-                self.receive_thread = threading.Thread(target=self.receive_audio, daemon=True)
-                self.receive_thread.start()
-                print("Started audio reception thread")
-            
-            # Start transmitting automatically (open mic)
-            self.transmitting = True
-            if self.transmit_thread is None or not self.transmit_thread.is_alive():
-                self.transmit_thread = threading.Thread(target=self.transmit_audio, daemon=True)
-                self.transmit_thread.start()
-                print("Started audio transmission thread")
-            
-            # Send a heartbeat to ensure we're registered with the server
-            self.socket.sendto(json.dumps({
-                "type": "heartbeat", 
-                "username": self.username,
-                "status": "active"  # Initially active (unmuted)
-            }).encode(), (self.host, self.port))
-            
-            # Set socket timeout for non-blocking reception
-            self.socket.settimeout(0.5)
-            
-            return True
-        except Exception as e:
-            print(f"Voice connection error: {e}")
-            # Clean up on failure
-            if hasattr(self, 'socket') and self.socket:
-                try:
-                    self.socket.close()
-                    self.socket = None
-                except:
-                    pass
-                    
-            self.connected = False
-            return False
-    
-    def toggle_mute(self):
-        self.transmitting = not self.transmitting
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
         
-        # Send mute status to server
-        if self.connected and self.socket:
-            try:
-                status = "muted" if not self.transmitting else "active"
-                self.socket.sendto(json.dumps({
-                    "type": "status", 
-                    "username": self.username,
-                    "status": status
-                }).encode(), (self.host, self.port))
-                print(f"Sent mute status: {status}")
-            except Exception as e:
-                print(f"Error sending mute status: {e}")
-                
-        return self.transmitting
-    
-    def transmit_audio(self):
-        print(f"Starting audio transmission thread")
-        silent_chunk = b'\x00' * CHUNK * 2  # silent audio for when muted
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #555;
+            transition: .4s;
+            border-radius: 24px;
+        }
         
-        while self.connected:
-            try:
-                if self.transmitting:
-                    try:
-                        data = self.input_stream.read(CHUNK, exception_on_overflow=False)
-                        if not data:
-                            continue
-                    except Exception as e:
-                        print(f"Error reading from microphone: {e}")
-                        data = silent_chunk
-                else:
-                    # When muted, just sleep briefly instead of sending silent audio
-                    time.sleep(0.05)
-                    continue
-                
-                if self.socket and self.connected:
-                    try:
-                        # Prepare packet with header
-                        header = json.dumps({
-                            "type": "audio", 
-                            "username": self.username
-                        }).encode()
-                        header_length = struct.pack("!I", len(header))
-                        
-                        # Send header length, header, then audio data
-                        packet = header_length + header + data
-                        self.socket.sendto(packet, (self.host, self.port))
-                    except Exception as e:
-                        print(f"Error sending audio packet: {e}")
-                        time.sleep(0.1)
-                        
-            except Exception as e:
-                print(f"Error in transmit_audio thread: {e}")
-                time.sleep(0.1)
-                
-        print(f"Audio transmission thread ending")
-    
-    def receive_audio(self):
-        print(f"Starting audio reception thread")
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
         
-        while self.connected:
-            try:
-                if not self.socket:
-                    print("Socket not available in receive_audio")
-                    time.sleep(0.5)
-                    continue
-                    
-                try:
-                    # Set timeout to prevent blocking forever
-                    data, addr = self.socket.recvfrom(CHUNK * 2 + 1024)  # Extra space for header
-                    
-                    # Debug info
-                    print(f"Received {len(data)} bytes from {addr}")
-                    
-                    # Check if this is a non-audio packet (control message)
-                    if data.startswith(b'{'):
-                        try:
-                            msg = json.loads(data.decode())
-                            msg_type = msg.get('type', '')
-                            print(f"Received control message: {msg_type} from server")
-                            
-                            # Handle user list update
-                            if msg_type == "user_list":
-                                self.voice_users = msg.get('users', {})
-                                print(f"Updated voice users: {self.voice_users}")
-                                if self.status_callback:
-                                    self.status_callback(self.voice_users)
-                            
-                            continue
-                        except json.JSONDecodeError:
-                            # Not valid JSON, might be part of audio data
-                            pass
-                    
-                    # Check if we have enough data for a header
-                    if len(data) < 8:  # Need at least 4 bytes for header length + some header data
-                        print(f"Packet too small: {len(data)} bytes")
-                        continue
-                    
-                    # Parse audio packet
-                    try:
-                        # Extract header length (first 4 bytes)
-                        header_length = struct.unpack("!I", data[:4])[0]
-                        
-                        # Make sure we have enough data
-                        if len(data) < 4 + header_length:
-                            print(f"Incomplete packet: expected {4 + header_length}, got {len(data)}")
-                            continue
-                        
-                        # Extract header and decode
-                        header_data = data[4:4+header_length]
-                        header = json.loads(header_data.decode())
-                        sender = header.get("username", "Unknown")
-                        
-                        print(f"Received audio from {sender}")
-                        
-                        # Extract audio data
-                        audio_data = data[4+header_length:]
-                        
-                        # Play audio if it's not from us and we have an output stream
-                        if sender != self.username and self.output_stream and audio_data:
-                            print(f"Playing audio from {sender} ({len(audio_data)} bytes)")
-                            self.output_stream.write(audio_data)
-                        
-                    except Exception as e:
-                        print(f"Error parsing audio packet: {str(e)}")
-                        
-                except socket.timeout:
-                    # This is expected, just continue the loop
-                    continue
-                except Exception as e:
-                    print(f"Error receiving audio data: {e}")
-                    time.sleep(0.1)
-                    
-            except Exception as e:
-                print(f"Error in audio receive loop: {e}")
-                time.sleep(0.1)
-                
-        print(f"Audio reception thread ending")
-    
-    def close(self):
-        print("Closing voice client")
-        # Signal threads to terminate
-        self.connected = False
-        self.transmitting = False
+        input:checked + .toggle-slider {
+            background-color: var(--primary);
+        }
         
-        # Send leave notification if possible
-        if self.socket:
-            try:
-                self.socket.sendto(json.dumps({
-                    "type": "leave", 
-                    "username": self.username
-                }).encode(), (self.host, self.port))
-            except:
-                pass
+        input:checked + .toggle-slider:before {
+            transform: translateX(26px);
+        }
         
-        # Give threads a moment to notice the flags
-        time.sleep(0.2)
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(0.5);
+                opacity: 0.5;
+            }
+            50% {
+                transform: scale(1.2);
+                opacity: 1;
+            }
+        }
         
-        # Close streams
-        if hasattr(self, 'input_stream') and self.input_stream:
-            try:
-                self.input_stream.stop_stream()
-                self.input_stream.close()
-                self.input_stream = None
-            except Exception as e:
-                print(f"Error closing input stream: {e}")
-            
-        if hasattr(self, 'output_stream') and self.output_stream:
-            try:
-                self.output_stream.stop_stream()
-                self.output_stream.close()
-                self.output_stream = None
-            except Exception as e:
-                print(f"Error closing output stream: {e}")
-            
-        # Close socket
-        if self.socket:
-            try:
-                self.socket.close()
-                self.socket = None
-            except Exception as e:
-                print(f"Error closing voice socket: {e}")
+        footer {
+            text-align: center;
+            padding: 2rem;
+            background: var(--dark);
+            color: #888;
+            margin-top: auto;
+            border-top: 1px solid var(--mid-gray);
+        }
         
-        # Terminate PyAudio instance
-        if hasattr(self, 'p') and self.p:
-            try:
-                self.p.terminate()
-                self.p = None
-            except Exception as e:
-                print(f"Error terminating PyAudio: {e}")
-        
-        print("Voice client closed")
-
-# Now let's fix the VoiceServer class to handle audio properly
-class VoiceServer:
-    def __init__(self, host, port):
-        self.host = host
-        self.port = port
-        self.clients = {}  # Dictionary to store client info: {addr: {'username': username, 'last_seen': timestamp, 'status': status}}
-        self.running = False
-        self.lock = threading.Lock()
-        
-    def start(self):
-        try:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.socket.bind((self.host, self.port))
-            self.running = True
-            
-            print(f"Voice server running on {self.host}:{self.port}")
-            
-            # Start cleanup thread to remove inactive clients
-            cleanup_thread = threading.Thread(target=self.cleanup_inactive_clients, daemon=True)
-            cleanup_thread.start()
-            
-            # Start broadcast thread to periodically send user list updates
-            broadcast_thread = threading.Thread(target=self.broadcast_user_list, daemon=True)
-            broadcast_thread.start()
-            
-            # Main server loop
-            while self.running:
-                try:
-                    data, addr = self.socket.recvfrom(CHUNK * 2 + 1024)  # Extra space for header
-                    print(f"Voice server received {len(data)} bytes from {addr}")
-                    
-                    # Process the received data
-                    self.process_client_data(data, addr)
-                except Exception as e:
-                    print(f"Error in voice server main loop: {e}")
-                    time.sleep(0.1)
-                    
-        except Exception as e:
-            print(f"Voice server failed to start: {e}")
-            self.running = False
-    
-    def process_client_data(self, data, addr):
-        # Update client's last seen time
-        with self.lock:
-            if addr in self.clients:
-                self.clients[addr]['last_seen'] = time.time()
-        
-        # Check if this is a join message or other control message
-        if data == b"join":
-            with self.lock:
-                if addr not in self.clients:
-                    self.clients[addr] = {
-                        'username': "Unknown",
-                        'last_seen': time.time(),
-                        'status': 'active'  # Default to active (unmuted)
-                    }
-                    print(f"New voice client connected: {addr}")
-                    self.broadcast_user_list_now()  # Send updated user list immediately
-            return
-        
-        # Try to parse as JSON if it might be a control message
-        if data.startswith(b'{'):
-            try:
-                msg = json.loads(data.decode())
-                msg_type = msg.get('type', '')
-                print(f"Processing voice control message: {msg_type}")
-                
-                if msg_type == 'join':
-                    username = msg.get('username', 'Unknown')
-                    status = msg.get('status', 'active')
-                    with self.lock:
-                        if addr not in self.clients:
-                            self.clients[addr] = {
-                                'username': username, 
-                                'last_seen': time.time(),
-                                'status': status
-                            }
-                        else:
-                            self.clients[addr]['username'] = username
-                            self.clients[addr]['last_seen'] = time.time()
-                            self.clients[addr]['status'] = status
-                    print(f"Voice client joined: {username} at {addr}")
-                    self.broadcast_user_list_now()  # Update user list
-                    return
-                
-                elif msg_type == 'heartbeat':
-                    username = msg.get('username', 'Unknown')
-                    status = msg.get('status', 'active')
-                    with self.lock:
-                        if addr not in self.clients:
-                            self.clients[addr] = {
-                                'username': username, 
-                                'last_seen': time.time(),
-                                'status': status
-                            }
-                        else:
-                            self.clients[addr]['username'] = username
-                            self.clients[addr]['last_seen'] = time.time()
-                            self.clients[addr]['status'] = status
-                    print(f"Heartbeat from {username} at {addr}")
-                    # Only broadcast user list if this is a new client
-                    if addr not in self.clients:
-                        self.broadcast_user_list_now()
-                    return
-                
-                elif msg_type == 'leave':
-                    with self.lock:
-                        if addr in self.clients:
-                            username = self.clients[addr].get('username', 'Unknown')
-                            print(f"Voice client {username} ({addr}) left")
-                            del self.clients[addr]
-                            self.broadcast_user_list_now()  # Update user list
-                    return
-                
-                elif msg_type == 'status':
-                    # Just update the client info, don't forward
-                    username = msg.get('username', 'Unknown')
-                    status = msg.get('status', 'unknown')
-                    with self.lock:
-                        if addr in self.clients:
-                            self.clients[addr]['username'] = username
-                            self.clients[addr]['status'] = status
-                            self.clients[addr]['last_seen'] = time.time()
-                    print(f"Client {username} is now {status}")
-                    self.broadcast_user_list_now()  # Update user list
-                    return
-            except json.JSONDecodeError:
-                # Not a JSON message, assume it's audio data
-                pass
-            except Exception as e:
-                print(f"Error processing control message: {e}")
-                return
-        
-        # Relay audio data to all other clients
-        try:
-            with self.lock:
-                clients_copy = list(self.clients.keys())
-            
-            sent_count = 0
-            for client_addr in clients_copy:
-                if client_addr != addr:  # Don't send back to the sender
-                    try:
-                        self.socket.sendto(data, client_addr)
-                        sent_count += 1
-                    except Exception as e:
-                        print(f"Error sending to client {client_addr}: {e}")
-            
-            print(f"Relayed audio to {sent_count} clients")
-        except Exception as e:
-            print(f"Error relaying audio data: {e}")
-    
-    def cleanup_inactive_clients(self):
-        """Remove clients that haven't been seen for a while"""
-        TIMEOUT = 10  # seconds
-        
-        while self.running:
-            try:
-                time.sleep(5)  # Check every 5 seconds
-                
-                current_time = time.time()
-                to_remove = []
-                
-                with self.lock:
-                    for addr, client_info in self.clients.items():
-                        if current_time - client_info['last_seen'] > TIMEOUT:
-                            to_remove.append(addr)
-                    
-                    if to_remove:
-                        for addr in to_remove:
-                            username = self.clients[addr].get('username', 'Unknown')
-                            print(f"Removing inactive voice client: {username} ({addr})")
-                            del self.clients[addr]
-                        
-                        # Broadcast updated user list if we removed anyone
-                        self.broadcast_user_list_now()
-                        
-            except Exception as e:
-                print(f"Error in cleanup thread: {e}")
-    
-    def broadcast_user_list(self):
-        """Periodically broadcast the list of users to all clients"""
-        while self.running:
-            try:
-                time.sleep(3)  # Update every 3 seconds
-                self.broadcast_user_list_now()
-            except Exception as e:
-                print(f"Error in broadcast thread: {e}")
-    
-    def broadcast_user_list_now(self):
-        """Immediately broadcast current user list to all clients"""
-        try:
-            # Create user list with usernames and statuses
-            users = {}
-            with self.lock:
-                for addr, client_info in self.clients.items():
-                    username = client_info.get('username', 'Unknown')
-                    if username != 'Unknown':  # Only include clients with proper usernames
-                        users[username] = client_info.get('status', 'active')
-            
-            # Create user list message
-            user_list_msg = json.dumps({
-                "type": "user_list",
-                "users": users
-            }).encode()
-            
-            # Send to all clients
-            with self.lock:
-                clients_copy = list(self.clients.keys())
-            
-            for client_addr in clients_copy:
-                try:
-                    self.socket.sendto(user_list_msg, client_addr)
-                except Exception as e:
-                    print(f"Error sending user list to {client_addr}: {e}")
-                    
-            print(f"Broadcast user list: {users}")
-                    
-        except Exception as e:
-            print(f"Error broadcasting user list: {e}")
-    
-    def stop(self):
-        self.running = False
-        if hasattr(self, 'socket'):
-            try:
-                self.socket.close()
-            except Exception as e:
-                print(f"Error closing voice server socket: {e}")
-
-# Add this to DiscordCloneApp class
-def add_chat_message(self, username, content):
-    """Add a message to the chat history"""
-    self.chat_history.config(state=tk.NORMAL)
-    timestamp = time.strftime("%H:%M:%S")
-    self.chat_history.insert(tk.END, f"[{timestamp}] {username}: {content}\n")
-    self.chat_history.see(tk.END)  # Scroll to bottom
-    self.chat_history.config(state=tk.DISABLED)
-
-class ChatServer:
-    def __init__(self, host, port):
-        self.host = host
-        self.port = port
-        self.clients = []
-        self.running = False
-        self.lock = threading.Lock()
-        
-    def start(self):
-        try:
-            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.server_socket.bind((self.host, self.port))
-            self.server_socket.listen(5)
-            self.running = True
-            
-            print(f"Chat server running on {self.host}:{self.port}")
-            
-            while self.running:
-                try:
-                    client_socket, address = self.server_socket.accept()
-                    client_thread = threading.Thread(target=self.handle_client, 
-                                                   args=(client_socket, address),
-                                                   daemon=True)
-                    client_thread.start()
-                except Exception as e:
-                    print(f"Error accepting connection: {e}")
-                    if not self.running:
-                        break
-                    time.sleep(0.1)
-        except Exception as e:
-            print(f"Server failed to start: {e}")
-            self.running = False
-            
-    def handle_client(self, client_socket, address):
-        username = None
-        try:
-            # Handle client connection
-            client_info = {
-                "socket": client_socket,
-                "address": address,
-                "username": None
+        @media (max-width: 768px) {
+            .option-card {
+                min-width: 100%;
             }
             
-            with self.lock:
-                self.clients.append(client_info)
+            .chat-options {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="16 2 8 2 2 8 2 16 8 22 16 22 22 16 22 8" />
+                <path d="M12 8v8" />
+                <path d="M8 12h8" />
+            </svg>
+            Emerald
+        </div>
+    </header>
+    
+    <main class="content">
+        <section class="intro">
+            <h2>True P2P Anonymous Chat</h2>
+            <p>Welcome to Emerald, where privacy meets conversation. Chat anonymously with strangers or connect with friends using direct peer-to-peer technology. No central servers, no data collection, just pure, private communication.</p>
             
-            while self.running:
-                data = client_socket.recv(4096)
-                if not data:
-                    break
-                    
-                message = json.loads(data.decode())
-                
-                if message["type"] == "join":
-                    username = message["username"]
-                    client_info["username"] = username
-                    print(f"User joined: {username}")
-                    
-                    # Notify other clients
-                    self.broadcast(json.dumps({
-                        "type": "join",
-                        "username": username
-                    }), client_socket)
-                    
-                elif message["type"] == "message":
-                    print(f"Message from {message['username']}: {message['content']}")
-                    
-                    # Broadcast the message to all clients
-                    self.broadcast(data.decode(), None)
-                    
-                elif message["type"] == "leave":
-                    break
-                    
-        except Exception as e:
-            print(f"Error handling client {address}: {e}")
+            <div class="security-badge">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                <span>Peer-to-peer encryption enabled</span>
+            </div>
             
-        finally:
-            # Clean up and remove client
-            if username:
-                print(f"User left: {username}")
-                self.broadcast(json.dumps({
-                    "type": "leave",
-                    "username": username
-                }), None)
-                
-            try:
-                client_socket.close()
-            except:
-                pass
-            
-            with self.lock:
-                self.clients = [c for c in self.clients if c["socket"] != client_socket]
-            
-    def broadcast(self, message, exclude_socket=None):
-        with self.lock:
-            clients_copy = self.clients.copy()
-            
-        for client in clients_copy:
-            # Don't send to the client who sent the message
-            if exclude_socket is not client["socket"]:
-                try:
-                    client["socket"].send(message.encode() if isinstance(message, str) else message)
-                except:
-                    # Remove failed clients later
-                    pass
-                    
-    def stop(self):
-        self.running = False
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="onlineCount">Initializing WebRTC...</span>
+            </div>
+        </section>
         
-        # Close all client connections
-        with self.lock:
-            clients_copy = self.clients.copy()
-            
-        for client in clients_copy:
-            try:
-                client["socket"].close()
-            except:
-                pass
+        <section class="chat-options">
+            <div class="option-card">
+                <div class="option-icon">👥</div>
+                <h3>Chat with Strangers</h3>
+                <p>Connect directly with random users around the world. Your identity stays protected with randomly generated usernames and peer-to-peer encryption.</p>
+                <button class="btn btn-primary" id="strangerChatBtn">Start Random Chat</button>
                 
-        # Close server socket
-        if hasattr(self, 'server_socket'):
-            try:
-                self.server_socket.close()
-            except Exception as e:
-                print(f"Error closing chat server socket: {e}")
+                <div class="privacy-settings">
+                    <h4>Privacy Settings</h4>
+                    <div class="setting-toggle">
+                        <span>End-to-end encryption</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="encryptionToggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-toggle">
+                        <span>Route through Tor (beta)</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="torToggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="option-card">
+                <div class="option-icon">🔒</div>
+                <h3>Direct P2P Chat</h3>
+                <p>Create a private connection and share a one-time code with friends for secure, anonymous conversations - no intermediary servers.</p>
+                <button class="btn btn-secondary" id="createRoomBtn">Create Private Room</button>
+                
+                <div class="join-room">
+                    <h3>Join Existing Room</h3>
+                    <div class="join-form">
+                        <input type="text" id="roomCodeInput" placeholder="Enter connection code">
+                        <button class="btn btn-outline" id="joinRoomBtn">Join</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+    
+    <!-- Random Chat Modal -->
+    <div class="modal" id="randomChatModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeRandomChat">&times;</span>
+            <div class="chat-header">
+                <h3>P2P Random Chat</h3>
+                <div>Your username: <span class="username" id="randomUsername">AnonymousEmerald123</span></div>
+            </div>
+            <div class="chat-container" id="randomChatContainer">
+                <div class="chat-messages" id="randomChatMessages">
+                    <div class="message system-message">
+                        Looking for a chat partner...
+                    </div>
+                    <div class="waiting-animation" id="searchingAnimation">
+                        <div class="waiting-dot"></div>
+                        <div class="waiting-dot"></div>
+                        <div class="waiting-dot"></div>
+                    </div>
+                </div>
+                <div class="chat-input">
+                    <input type="text" id="randomChatInput" placeholder="Type your message..." disabled>
+                    <button class="btn btn-primary" id="randomSendBtn" disabled>Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Private Room Modal -->
+    <div class="modal" id="privateRoomModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closePrivateRoom">&times;</span>
+            <h3>Private P2P Room Created</h3>
+            <p>Share this connection code with friends to let them join your direct chat:</p>
+            <div class="room-code" id="generatedRoomCode">
+                Generating...
+                <button class="copy-btn" id="copyRoomCode">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="security-badge">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+                <span>Direct P2P connection with AES-256 encryption</span>
+            </div>
+            <p>Waiting for others to join directly...</p>
+            <div class="chat-header">
+                <div>Your username: <span class="username" id="privateUsername">GlowingEmerald456</span></div>
+            </div>
+            <div class="chat-container" id="privateChatContainer">
+                <div class="chat-messages" id="privateChatMessages">
+                    <div class="message system-message">
+                        Connection ready! Share the code to start chatting.
+                    </div>
+                </div>
+                <div class="chat-input">
+                    <input type="text" id="privateChatInput" placeholder="Type your message...">
+                    <button class="btn btn-secondary" id="privateSendBtn">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Join Room Modal -->
+    <div class="modal" id="joinRoomModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeJoinRoom">&times;</span>
+            <div class="chat-header">
+                <h3>Joined Private P2P Room</h3>
+                <div>Your username: <span class="username" id="joinUsername">ShiningEmerald789</span></div>
+            </div>
+            <div class="chat-container" id="joinChatContainer">
+                <div class="chat-messages" id="joinChatMessages">
+                    <div class="message system-message">
+                        Establishing direct connection...
+                    </div>
+                    <div class="waiting-animation" id="joiningAnimation">
+                        <div class="waiting-dot"></div>
+                        <div class="waiting-dot"></div>
+                        <div class="waiting-dot"></div>
+                    </div>
+                </div>
+                <div class="chat-input">
+                    <input type="text" id="joinChatInput" placeholder="Type your message..." disabled>
+                    <button class="btn btn-secondary" id="joinSendBtn" disabled>Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <footer>
+        <p>&copy; 2025 Emerald Chat. All rights reserved.</p>
+        <p>100% Anonymous. True P2P. No data stored.</p>
+    </footer>
 
-class DiscordCloneApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Discord Clone")
-        self.root.geometry("800x600")
-        self.root.configure(bg="#36393f")
+    <script>
+        // WebRTC Configuration
+        const configuration = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }, // Public STUN server - only used for initial connection
+                { urls: 'stun:stun1.l.google.com:19302' },
+            ]
+        };
         
-        # Generate username
-        self.username = generate_username()
+        // We need a minimal signaling server for initial peer discovery
+        // This is the only server communication needed, after which everything is P2P
+        const signalingServerUrl = 'https://signaling.emerald-chat.example';
         
-        # Try getting local IP for automatic server
-        self.server_host = self.get_local_ip()
-        self.running_server = True  # Always run server by default
+        // Variables for managing chat state
+        let currentUsername = '';
+        let currentPartner = '';
+        let currentRoomId = '';
+        let isConnectedToStranger = false;
+        let isConnectedToPrivateRoom = false;
+        let isJoiningRoom = false;
+        let peerConnection = null;
+        let dataChannel = null;
         
-        # Set up UI
-        self.setup_ui()
+        // Encryption keys
+        let encryptionKey = null;
+        let ivCounter = 0;
         
-        # Set up server and client
-        self.setup_network()
+        // Elements
+        const statusDot = document.getElementById('statusDot');
+        const onlineCount = document.getElementById('onlineCount');
+        const strangerChatBtn = document.getElementById('strangerChatBtn');
+        const createRoomBtn = document.getElementById('createRoomBtn');
+        const joinRoomBtn = document.getElementById('joinRoomBtn');
+        const randomChatModal = document.getElementById('randomChatModal');
+        const privateRoomModal = document.getElementById('privateRoomModal');
+        const joinRoomModal = document.getElementById('joinRoomModal');
+        const closeRandomChat = document.getElementById('closeRandomChat');
+        const closePrivateRoom = document.getElementById('closePrivateRoom');
+        const closeJoinRoom = document.getElementById('closeJoinRoom');
+        const randomUsername = document.getElementById('randomUsername');
+        const privateUsername = document.getElementById('privateUsername');
+        const joinUsername = document.getElementById('joinUsername');
+        const generatedRoomCode = document.getElementById('generatedRoomCode');
+        const copyRoomCode = document.getElementById('copyRoomCode');
+        const randomChatMessages = document.getElementById('randomChatMessages');
+        const privateChatMessages = document.getElementById('privateChatMessages');
+        const joinChatMessages = document.getElementById('joinChatMessages');
+        const randomChatInput = document.getElementById('randomChatInput');
+        const privateChatInput = document.getElementById('privateChatInput');
+        const joinChatInput = document.getElementById('joinChatInput');
+        const randomSendBtn = document.getElementById('randomSendBtn');
+        const privateSendBtn = document.getElementById('privateSendBtn');
+        const joinSendBtn = document.getElementById('joinSendBtn');
+        const searchingAnimation = document.getElementById('searchingAnimation');
+        const joiningAnimation = document.getElementById('joiningAnimation');
+        const encryptionToggle = document.getElementById('encryptionToggle');
+        const torToggle = document.getElementById('torToggle');
         
-        # Handle window closing
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        // === WebRTC Implementation ===
         
-    def get_local_ip(self):
-        try:
-            # Create a dummy connection to get local IP
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]
-            s.close()
-            return ip
-        except:
-            return "127.0.0.1"  # Fallback to localhost
-            
-    def setup_ui(self):
-        # App theme colors (Discord-like)
-        self.bg_color = "#36393f"
-        self.sidebar_color = "#2f3136"
-        self.text_color = "#dcddde"
-        self.input_bg = "#40444b"
-        self.accent_color = "#7289da"
-        self.muted_color = "#ED4245"  # Red color for muted users
+        // Connect to the minimal signaling server
+        let signalingSocket = null;
         
-        # Configure main layout
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
-        
-        # Main frame
-        self.main_frame = tk.Frame(self.root, bg=self.bg_color)
-        self.main_frame.grid(row=0, column=0, sticky="nsew")
-        self.main_frame.columnconfigure(1, weight=1)
-        self.main_frame.rowconfigure(0, weight=1)
-        
-        # Sidebar
-        self.sidebar = tk.Frame(self.main_frame, width=200, bg=self.sidebar_color)
-        self.sidebar.grid(row=0, column=0, sticky="ns")
-        self.sidebar.grid_propagate(False)
-        
-        # Server info
-        self.server_label = tk.Label(self.sidebar, text="Simple Discord", 
-                                    font=("Arial", 14, "bold"), 
-                                    bg=self.sidebar_color, fg=self.text_color)
-        self.server_label.pack(pady=(15, 20))
-        
-        # Text channel
-        tk.Label(self.sidebar, text="GLOBAL CHAT", 
-                font=("Arial", 12), 
-                bg=self.sidebar_color, fg=self.text_color).pack(pady=5, padx=10, anchor="w")
-        
-        # Voice channel section
-        self.voice_section = tk.Frame(self.sidebar, bg=self.sidebar_color)
-        self.voice_section.pack(pady=5, fill="x")
-        
-        tk.Label(self.voice_section, text="VOICE CHANNELS", 
-                font=("Arial", 12), 
-                bg=self.sidebar_color, fg=self.text_color).pack(pady=5, padx=10, anchor="w")
-        
-        # Voice channel
-        self.voice_btn_frame = tk.Frame(self.voice_section, bg=self.sidebar_color)
-        self.voice_btn_frame.pack(pady=5, fill="x", padx=10)
-        
-        tk.Label(self.voice_btn_frame, text="🔊 Voice Chat", 
-                font=("Arial", 12), 
-                bg=self.sidebar_color, fg=self.text_color).pack(side="left")
-        
-        self.voice_btn = tk.Button(self.voice_btn_frame, text="Join", 
-                                  bg=self.accent_color, fg="white",
-                                  command=self.toggle_voice)
-        self.voice_btn.pack(side="right")
-        
-        # Voice users frame (will be shown when voice is joined)
-        self.voice_users_frame = tk.Frame(self.voice_section, bg=self.sidebar_color)
-        self.voice_users_frame.pack(fill="x", padx=15, pady=5)
-        
-        # This will hold our voice user labels - initially empty
-        self.voice_user_labels = {}
-        
-        # Add a label to show when no users are connected
-        self.no_users_label = tk.Label(self.voice_users_frame, 
-                                     text="No users in voice chat", 
-                                     font=("Arial", 9, "italic"),
-                                     bg=self.sidebar_color, 
-                                     fg=self.text_color)
-        self.no_users_label.pack(pady=5, anchor="w")
-        
-        # User info
-        self.user_frame = tk.Frame(self.sidebar, bg="#292b2f", height=40)
-        self.user_frame.pack(side="bottom", fill="x")
-        
-        self.user_label = tk.Label(self.user_frame, text=self.username, 
-                                  font=("Arial", 10), 
-                                  bg="#292b2f", fg=self.text_color)
-        self.user_label.pack(pady=10, padx=10, anchor="w")
-        
-        # Chat area
-        self.chat_frame = tk.Frame(self.main_frame, bg=self.bg_color)
-        self.chat_frame.grid(row=0, column=1, sticky="nsew")
-        self.chat_frame.columnconfigure(0, weight=1)
-        self.chat_frame.rowconfigure(0, weight=1)
-        
-        # Chat history
-        # Chat history
-        self.chat_history = scrolledtext.ScrolledText(self.chat_frame, 
-                                                    wrap=tk.WORD,
-                                                    bg=self.bg_color,
-                                                    fg=self.text_color,
-                                                    font=("Arial", 10),
-                                                    bd=0,
-                                                    insertbackground=self.text_color)
-        self.chat_history.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 5))
-        self.chat_history.config(state=tk.DISABLED)  # Read-only
-        
-        # Message input area
-        self.input_frame = tk.Frame(self.chat_frame, bg=self.bg_color)
-        self.input_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
-        self.input_frame.columnconfigure(0, weight=1)
-        
-        self.message_input = tk.Entry(self.input_frame, 
-                                    bg=self.input_bg,
-                                    fg=self.text_color,
-                                    font=("Arial", 10),
-                                    bd=0,
-                                    insertbackground=self.text_color)
-        self.message_input.grid(row=0, column=0, sticky="ew", ipady=5, padx=(0, 5))
-        self.message_input.bind("<Return>", self.send_message)
-        
-        self.send_button = tk.Button(self.input_frame, 
-                                    text="Send",
-                                    bg=self.accent_color,
-                                    fg="white",
-                                    bd=0,
-                                    command=self.send_message)
-        self.send_button.grid(row=0, column=1)
-        
-    def update_voice_user_list(self, voice_users):
-        """Update the list of users in voice chat with their status"""
-        # Clear existing user labels first
-        for label in self.voice_user_labels.values():
-            label.destroy()
-        self.voice_user_labels = {}
-        
-        # Hide or show the "no users" label
-        if not voice_users:
-            self.no_users_label.pack(pady=5, anchor="w")
-        else:
-            self.no_users_label.pack_forget()
-        
-        # Add all current users
-        for username, status in voice_users.items():
-            # Set color based on status - red for muted, normal text color for active
-            text_color = self.muted_color if status == "muted" else self.text_color
-            
-            # Create label with username and proper microphone icon
-            icon = "🎙️" if status == "active" else "🔇"
-            user_label = tk.Label(
-                self.voice_users_frame,
-                text=f"{icon} {username}",
-                font=("Arial", 9),
-                bg=self.sidebar_color,
-                fg=text_color,
-                anchor="w"
-            )
-            user_label.pack(pady=2, fill="x", anchor="w")
-            self.voice_user_labels[username] = user_label
-    
-    def setup_network(self):
-        # Create text chat client
-        self.client = ChatClient(self.server_host, PORT, self.username)
-        
-        # Start server if needed
-        if self.running_server:
-            self.start_server()
-        
-        # Connect to the server
-        self.connect_to_server()
-        
-        # We don't create the voice client until the user joins voice chat
-        self.in_voice_chat = False
-        self.voice_client = None
-    
-    def start_server(self):
-        # Start chat server
-        self.chat_server = ChatServer(HOST, PORT)
-        self.chat_server_thread = threading.Thread(target=self.chat_server.start, daemon=True)
-        self.chat_server_thread.start()
-        
-        # Start voice server
-        self.voice_server = VoiceServer(HOST, VOICE_PORT)
-        self.voice_server_thread = threading.Thread(target=self.voice_server.start, daemon=True)
-        self.voice_server_thread.start()
-        
-        self.add_system_message(f"Server running on {self.server_host}:{PORT}")
-    
-    def connect_to_server(self):
-        if self.client.connect():
-            self.receive_thread = threading.Thread(target=self.client.receive_messages, 
-                                                 args=(self.on_message_received,),
-                                                 daemon=True)
-            self.receive_thread.start()
-            
-            self.add_system_message(f"Connected to server as {self.username}")
-        else:
-            self.add_system_message("Failed to connect to server")
-    
-    def add_system_message(self, message):
-        """Add a system message to the chat history"""
-        self.chat_history.config(state=tk.NORMAL)
-        self.chat_history.insert(tk.END, f"\n--- {message} ---\n")
-        self.chat_history.see(tk.END)
-        self.chat_history.config(state=tk.DISABLED)
-    
-    def on_message_received(self, message):
-        """Handle received messages from the server"""
-        self.chat_history.config(state=tk.NORMAL)
-        self.chat_history.insert(tk.END, f"{message}\n")
-        self.chat_history.see(tk.END)
-        self.chat_history.config(state=tk.DISABLED)
-    
-    def send_message(self, event=None):
-        """Send a message to the chat"""
-        message = self.message_input.get().strip()
-        if message:
-            if self.client.send_message(message):
-                # Clear input field
-                self.message_input.delete(0, tk.END)
-            else:
-                self.add_system_message("Failed to send message (not connected)")
-    
-    def toggle_voice(self):
-        """Toggle joining/leaving voice chat"""
-        if not hasattr(self, 'in_voice_chat') or not self.in_voice_chat:
-            # Join voice chat
-            if not hasattr(self, 'voice_client') or self.voice_client is None:
-                self.voice_client = VoiceClient(self.server_host, VOICE_PORT, self.username)
-                # Set the callback for voice status updates
-                self.voice_client.set_status_callback(self.update_voice_user_list)
-            
-            if self.voice_client.connect():
-                self.in_voice_chat = True
-                self.voice_btn.config(text="Leave", bg=self.muted_color)
+        function connectToSignalingServer() {
+            try {
+                // Use a minimal WebSocket connection to the signaling server
+                signalingSocket = new WebSocket(signalingServerUrl);
                 
-                # Add mute toggle button
-                self.mute_btn = tk.Button(
-                    self.voice_btn_frame, 
-                    text="Mute", 
-                    bg=self.accent_color, 
-                    fg="white",
-                    command=self.toggle_mute
-                )
-                self.mute_btn.pack(side="right", padx=(5, 0))
+                signalingSocket.onopen = function() {
+                    console.log('Connected to signaling server');
+                    statusDot.classList.add('online');
+                    onlineCount.textContent = 'P2P system ready';
+                    
+                    // Generate random username on connection
+                    const randomName = generateUsername();
+                    currentUsername = randomName;
+                    randomUsername.textContent = randomName;
+                    privateUsername.textContent = randomName;
+                    joinUsername.textContent = randomName;
+                    
+                    // Let the signaling server know we're here
+                    signalingSocket.send(JSON.stringify({
+                        type: 'register',
+                        username: currentUsername
+                    }));
+                };
                 
-                self.add_system_message("You joined voice chat")
-            else:
-                self.add_system_message("Failed to join voice chat")
-        else:
-            # Leave voice chat
-            if hasattr(self, 'voice_client') and self.voice_client:
-                self.voice_client.close()
-            
-            self.in_voice_chat = False
-            self.voice_btn.config(text="Join", bg=self.accent_color)
-            
-            # Remove mute button
-            if hasattr(self, 'mute_btn') and self.mute_btn:
-                self.mute_btn.destroy()
+                signalingSocket.onmessage = handleSignalingMessage;
                 
-            # Clear voice users display
-            for label in self.voice_user_labels.values():
-                label.destroy()
-            self.voice_user_labels = {}
-            self.no_users_label.pack(pady=5, anchor="w")
-            
-            self.add_system_message("You left voice chat")
-    
-    def toggle_mute(self):
-        """Toggle microphone mute status"""
-        if hasattr(self, 'voice_client') and self.voice_client and self.in_voice_chat:
-            is_transmitting = self.voice_client.toggle_mute()
-            
-            if is_transmitting:
-                self.mute_btn.config(text="Mute", bg=self.accent_color)
-                self.add_system_message("Microphone unmuted")
-            else:
-                self.mute_btn.config(text="Unmute", bg=self.muted_color)
-                self.add_system_message("Microphone muted")
-    
-    def on_closing(self):
-        """Handle window closing event"""
-        # Stop client connections
-        if hasattr(self, 'client'):
-            self.client.close()
+                signalingSocket.onclose = function() {
+                    console.log('Disconnected from signaling server');
+                    statusDot.classList.remove('online');
+                    onlineCount.textContent = 'Signaling server disconnected. Attempting to reconnect...';
+                    
+                    // Try to reconnect after a delay
+                    setTimeout(connectToSignalingServer, 5000);
+                };
+                
+                signalingSocket.onerror = function(error) {
+                    console.error('Signaling server error:', error);
+                    onlineCount.textContent = 'Error connecting to signaling server';
+                };
+            } catch (err) {
+                console.error('Failed to connect to signaling server:', err);
+                onlineCount.textContent = 'Failed to connect to signaling server';
+                
+                // Try to reconnect after a delay
+                setTimeout(connectToSignalingServer, 5000);
+            }
+        }
         
-        if hasattr(self, 'voice_client') and self.voice_client:
-            self.voice_client.close()
-        
-        # Stop servers if running
-        if hasattr(self, 'chat_server_thread') and self.chat_server_thread.is_alive():
-            self.chat_server.stop()
+        function handleSignalingMessage(event) {
+            const data = JSON.parse(event.data);
             
-        if hasattr(self, 'voice_server_thread') and self.voice_server_thread.is_alive():
-            self.voice_server.stop()
-        
-        # Destroy the window
-        self.root.destroy()
+            switch(data.type) {
+                case 'online_count':
+                    onlineCount.textContent = `${data.count} user${data.count !== 1 ? 's' : ''} available for P2P chat`;
+                    break;
+                    
+                case 'offer':
+                    handleOffer(data);
+                    break;
+                    
+                case 'answer':
+                    handleAnswer(data);
+                    break;
+                    
+                case 'ice_candidate':
+                    handleIceCandidate(data);
+                    break;
+                    
+                case 'match_found':
+                    searchingAnimation.style.display = 'none';
+                    addMessage(randomChatMessages, `Found a potential peer! Establishing secure connection...`);
+                    createPeerConnection('random', data.peerId);
+                    break;
+                    
+                case 'no_peers_available':
+                    searchingAnimation.style.display = 'none';
+                    addMessage(randomChatMessages, 'No users available for chat right now. Please try again later.');
+                    
+                    // Show retry button
+                    const retryBtn = document.createElement('button');
+                    retryBtn.className = 'btn btn-primary';
+                    retryBtn.textContent = 'Try Again';
+                    retryBtn.style.margin = '10px auto';
+                    retryBtn.style.display = 'block';
+                    
+                    retryBtn.addEventListener('click', () => {
+                        // Remove all previous messages
+                        while (randomChatMessages.firstChild) {
+                            randomChatMessages.removeChild(randomChatMessages.firstChild);
+                        }
+                        
+                        // Show searching message and animation
+                        addMessage(randomChatMessages, 'Looking for a chat partner...');
+                        searchingAnimation.style.display = 'flex';
+                        randomChatMessages.appendChild(searchingAnimation);
+                        
+                        // Start new search
+                        signalingSocket.send(JSON.stringify({
+                            type: 'find_peer',
+                            username: currentUsername
+                        }));
+                        
+                        // Remove retry button
+                        retryBtn.remove();
+                    });
+                    
+                    randomChatMessages.appendChild(retryBtn);
+                    break;
+                    
+                case 'room_created':
+                    currentRoomId = data.roomId;
+                    generatedRoomCode.textContent = data.connectionCode;
+                    isConnectedToPrivateRoom = true;
+                    
+                    // Set up the peer connection as the host
+                    createPeerConnection('host', data.roomId);
+                    break;
+                    
+                case 'peer_joined_room':
+                    // Someone is joining our room - send them an offer
+                    currentPartner = data.username;
+                    addMessage(privateChatMessages, `${currentPartner} is connecting... Establishing secure P2P channel.`);
+                    createOffer();
+                    break;
+                    
+                case 'join_success':
+                    currentRoomId = data.roomId;
+                    currentPartner = data.hostUsername;
+                    isJoiningRoom = true;
+                    
+                    // Set up the peer connection as the joiner
+                    createPeerConnection('join', data.roomId);
+                    break;
+                    
+                case 'room_not_found':
+                    joiningAnimation.style.display = 'none';
+                    addMessage(joinChatMessages, 'Room not found. Please check the code and try again.');
+                    
+                    // Continuing from where the code was cut off...
 
-# Main function to run the app
-def main():
-    root = tk.Tk()
-    app = DiscordCloneApp(root)
-    root.mainloop()
-
-if __name__ == "__main__":
-    main()</h1>
+                    // Show back button
+                    const backBtn = document.createElement('button');
+                    backBtn.className = 'btn btn-outline';
+                    backBtn.textContent = 'Back';
+                    backBtn.style.margin = '10px auto';
+                    backBtn.style.display = 'block';
+                    
+                    backBtn.addEventListener('click', () => {
+                        joinRoomModal.style.display = 'none';
+                        document.getElementById('roomCodeInput').value = '';
+                    });
+                    
+                    joinChatMessages.appendChild(backBtn);
+                    break;
+                    
+                case 'error':
+                    console.error('Server error:', data.message);
+                    addMessage(isJoiningRoom ? joinChatMessages : randomChatMessages, 
+                        `Error: ${data.message}`);
+                    break;
+            }
+        }
+        
+        // Create WebRTC peer connection
+        function createPeerConnection(type, peerId) {
+            try {
+                // Create RTCPeerConnection
+                peerConnection = new RTCPeerConnection(configuration);
+                
+                // Setup ice handling
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        // Send ICE candidate to peer via signaling server
+                        signalingSocket.send(JSON.stringify({
+                            type: 'ice_candidate',
+                            candidate: event.candidate,
+                            recipientId: peerId,
+                            senderId: currentUsername,
+                            roomId: type === 'random' ? null : currentRoomId
+                        }));
+                    }
+                };
+                
+                peerConnection.oniceconnectionstatechange = () => {
+                    console.log('ICE connection state:', peerConnection.iceConnectionState);
+                    
+                    if (peerConnection.iceConnectionState === 'disconnected' || 
+                        peerConnection.iceConnectionState === 'failed' || 
+                        peerConnection.iceConnectionState === 'closed') {
+                        
+                        handleDisconnect(type);
+                    }
+                };
+                
+                // Create data channel for sending messages
+                if (type === 'random' || type === 'host') {
+                    // We're initiating, so create the data channel
+                    dataChannel = peerConnection.createDataChannel('chat');
+                    setupDataChannel(dataChannel, type);
+                    
+                    // If we're the host or initiator, create an offer
+                    if (type === 'host' && isConnectedToPrivateRoom) {
+                        // We'll create the offer when a peer joins
+                    } else if (type === 'random') {
+                        createOffer();
+                    }
+                } else {
+                    // We're joining, so wait for the data channel
+                    peerConnection.ondatachannel = (event) => {
+                        dataChannel = event.channel;
+                        setupDataChannel(dataChannel, type);
+                    };
+                }
+                
+            } catch (err) {
+                console.error('Error creating WebRTC peer connection:', err);
+                addMessage(
+                    type === 'random' ? randomChatMessages : 
+                    type === 'host' ? privateChatMessages : 
+                    joinChatMessages, 
+                    'Failed to create P2P connection. Please try again.'
+                );
+            }
+        }
+        
+        // Setup the data channel event handlers
+        function setupDataChannel(channel, type) {
+            channel.onopen = () => {
+                console.log('Data channel is open');
+                
+                // Generate and exchange encryption key if encryption is enabled
+                if (encryptionToggle.checked) {
+                    generateEncryptionKey().then(key => {
+                        encryptionKey = key;
+                        
+                        // Send a system message to the UI
+                        const messageContainer = 
+                            type === 'random' ? randomChatMessages : 
+                            type === 'host' ? privateChatMessages : 
+                            joinChatMessages;
+                            
+                        const inputField = 
+                            type === 'random' ? randomChatInput : 
+                            type === 'host' ? privateChatInput : 
+                            joinChatInput;
+                            
+                        const sendButton = 
+                            type === 'random' ? randomSendBtn : 
+                            type === 'host' ? privateSendBtn : 
+                            joinSendBtn;
+                            
+                        addMessage(messageContainer, 'Secure P2P connection established! You can chat privately now.');
+                        
+                        // Enable chat input and send button
+                        inputField.disabled = false;
+                        sendButton.disabled = false;
+                        
+                        // Hide loading animations
+                        if (type === 'random') {
+                            searchingAnimation.style.display = 'none';
+                            isConnectedToStranger = true;
+                        } else if (type === 'join') {
+                            joiningAnimation.style.display = 'none';
+                            isJoiningRoom = false;
+                            isConnectedToPrivateRoom = true;
+                        }
+                        
+                        // Focus on input field
+                        inputField.focus();
+                    });
+                } else {
+                    // No encryption, just enable chat
+                    const messageContainer = 
+                        type === 'random' ? randomChatMessages : 
+                        type === 'host' ? privateChatMessages : 
+                        joinChatMessages;
+                        
+                    const inputField = 
+                        type === 'random' ? randomChatInput : 
+                        type === 'host' ? privateChatInput : 
+                        joinChatInput;
+                        
+                    const sendButton = 
+                        type === 'random' ? randomSendBtn : 
+                        type === 'host' ? privateSendBtn : 
+                        joinSendBtn;
+                        
+                    addMessage(messageContainer, 'P2P connection established! You can chat now.');
+                    
+                    // Enable chat input and send button
+                    inputField.disabled = false;
+                    sendButton.disabled = false;
+                    
+                    // Hide loading animations
+                    if (type === 'random') {
+                        searchingAnimation.style.display = 'none';
+                        isConnectedToStranger = true;
+                    } else if (type === 'join') {
+                        joiningAnimation.style.display = 'none';
+                        isJoiningRoom = false;
+                        isConnectedToPrivateRoom = true;
+                    }
+                    
+                    // Focus on input field
+                    inputField.focus();
+                }
+            };
+            
+            channel.onclose = () => {
+                console.log('Data channel is closed');
+                handleDisconnect(type);
+            };
+            
+            channel.onerror = (error) => {
+                console.error('Data channel error:', error);
+                addMessage(
+                    type === 'random' ? randomChatMessages : 
+                    type === 'host' ? privateChatMessages : 
+                    joinChatMessages, 
+                    'Error in data channel connection.'
+                );
+            };
+            
+            channel.onmessage = (event) => {
+                console.log('Message received:', event.data);
+                
+                try {
+                    // Decrypt if encryption is enabled
+                    let messageData;
+                    
+                    if (encryptionToggle.checked) {
+                        const decrypted = JSON.parse(event.data);
+                        messageData = {
+                            type: decrypted.type,
+                            text: decrypted.text ? decryptMessage(decrypted.text, encryptionKey, decrypted.iv) : null,
+                            username: decrypted.username
+                        };
+                    } else {
+                        messageData = JSON.parse(event.data);
+                    }
+                    
+                    const messageContainer = 
+                        type === 'random' ? randomChatMessages : 
+                        type === 'host' ? privateChatMessages : 
+                        joinChatMessages;
+                        
+                    if (messageData.type === 'message') {
+                        addMessage(
+                            messageContainer, 
+                            messageData.text, 
+                            'received', 
+                            messageData.username
+                        );
+                    } else if (messageData.type === 'system') {
+                        addMessage(messageContainer, messageData.text);
+                    }
+                } catch (err) {
+                    console.error('Error processing message:', err);
+                }
+            };
+        }
+        
+        // Create an offer (initiator side)
+        function createOffer() {
+            if (!peerConnection) return;
+            
+            peerConnection.createOffer()
+                .then(offer => peerConnection.setLocalDescription(offer))
+                .then(() => {
+                    // Send the offer to the other peer via signaling server
+                    signalingSocket.send(JSON.stringify({
+                        type: 'offer',
+                        offer: peerConnection.localDescription,
+                        senderId: currentUsername,
+                        recipientId: currentPartner || null,
+                        roomId: isConnectedToPrivateRoom ? currentRoomId : null
+                    }));
+                })
+                .catch(err => {
+                    console.error('Error creating offer:', err);
+                    addMessage(
+                        isConnectedToPrivateRoom ? privateChatMessages : randomChatMessages,
+                        'Failed to create connection offer. Please try again.'
+                    );
+                });
+        }
+        
+        // Handle received offer (receiver side)
+        function handleOffer(data) {
+            if (!peerConnection) {
+                // Not expecting an offer, so create peer connection
+                if (isJoiningRoom) {
+                    createPeerConnection('join', currentRoomId);
+                } else {
+                    createPeerConnection('random', data.senderId);
+                }
+            }
+            
+            currentPartner = data.senderId;
+            
+            // Set remote description from the offer
+            peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
+                .then(() => peerConnection.createAnswer())
+                .then(answer => peerConnection.setLocalDescription(answer))
+                .then(() => {
+                    // Send the answer back via signaling server
+                    signalingSocket.send(JSON.stringify({
+                        type: 'answer',
+                        answer: peerConnection.localDescription,
+                        senderId: currentUsername,
+                        recipientId: data.senderId,
+                        roomId: isJoiningRoom ? currentRoomId : null
+                    }));
+                })
+                .catch(err => {
+                    console.error('Error handling offer:', err);
+                    addMessage(
+                        isJoiningRoom ? joinChatMessages : randomChatMessages,
+                        'Failed to handle connection offer. Please try again.'
+                    );
+                });
+        }
+        
+        // Handle received answer (initiator side)
+        function handleAnswer(data) {
+            if (!peerConnection) return;
+            
+            peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
+                .catch(err => {
+                    console.error('Error handling answer:', err);
+                    addMessage(
+                        isConnectedToPrivateRoom ? privateChatMessages : randomChatMessages,
+                        'Failed to establish connection. Please try again.'
+                    );
+                });
+        }
+        
+        // Handle ICE candidate
+        function handleIceCandidate(data) {
+            if (!peerConnection) return;
+            
+            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
+                .catch(err => {
+                    console.error('Error adding ICE candidate:', err);
+                });
+        }
+        
+        // Handle disconnection
+        function handleDisconnect(type) {
+            const messageContainer = 
+                type === 'random' ? randomChatMessages : 
+                type === 'host' ? privateChatMessages : 
+                joinChatMessages;
+                
+            const inputField = 
+                type === 'random' ? randomChatInput : 
+                type === 'host' ? privateChatInput : 
+                joinChatInput;
+                
+            const sendButton = 
+                type === 'random' ? randomSendBtn : 
+                type === 'host' ? privateSendBtn : 
+                joinSendBtn;
+            
+            addMessage(messageContainer, 'Peer disconnected.');
+            
+            // Disable chat input and send button
+            inputField.disabled = true;
+            sendButton.disabled = true;
+            
+            // Reset connection state
+            if (type === 'random') {
+                isConnectedToStranger = false;
+            } else {
+                isConnectedToPrivateRoom = false;
+                isJoiningRoom = false;
+            }
+            
+            // Clean up WebRTC
+            if (dataChannel) {
+                dataChannel.close();
+                dataChannel = null;
+            }
+            
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            
+            // Add restart button
+            const restartBtn = document.createElement('button');
+            restartBtn.className = 'btn btn-primary';
+            restartBtn.textContent = type === 'random' ? 'Find New Partner' : 'Reconnect';
+            restartBtn.style.margin = '10px auto';
+            restartBtn.style.display = 'block';
+            
+            restartBtn.addEventListener('click', () => {
+                if (type === 'random') {
+                    // Clear messages
+                    while (randomChatMessages.firstChild) {
+                        randomChatMessages.removeChild(randomChatMessages.firstChild);
+                    }
+                    
+                    // Show searching message and animation
+                    addMessage(randomChatMessages, 'Looking for a chat partner...');
+                    searchingAnimation.style.display = 'flex';
+                    randomChatMessages.appendChild(searchingAnimation);
+                    
+                    // Start search
+                    signalingSocket.send(JSON.stringify({
+                        type: 'find_peer',
+                        username: currentUsername
+                    }));
+                } else {
+                    // Close the current modal
+                    if (type === 'host') {
+                        privateRoomModal.style.display = 'none';
+                    } else {
+                        joinRoomModal.style.display = 'none';
+                    }
+                }
+                
+                // Remove restart button
+                restartBtn.remove();
+            });
+            
+            messageContainer.appendChild(restartBtn);
+        }
+        
+        // Send message via WebRTC data channel
+        function sendMessage(type) {
+            let inputField, messageContainer;
+            
+            if (type === 'random') {
+                inputField = randomChatInput;
+                messageContainer = randomChatMessages;
+            } else if (type === 'private') {
+                inputField = privateChatInput;
+                messageContainer = privateChatMessages;
+            } else {
+                inputField = joinChatInput;
+                messageContainer = joinChatMessages;
+            }
+            
+            const message = inputField.value.trim();
+            if (!message || !dataChannel) return;
+            
+            // Clear input field
+            inputField.value = '';
+            
+            try {
+                // Add message to our UI
+                addMessage(messageContainer, message, 'sent');
+                
+                // Prepare message data
+                let messageData = {
+                    type: 'message',
+                    text: message,
+                    username: currentUsername
+                };
+                
+                // Encrypt if enabled
+                if (encryptionToggle.checked) {
+                    const iv = generateIV();
+                    messageData = {
+                        type: 'message',
+                        text: encryptMessage(message, encryptionKey, iv),
+                        username: currentUsername,
+                        iv: iv
+                    };
+                }
+                
+                // Send over data channel
+                dataChannel.send(JSON.stringify(messageData));
+            } catch (err) {
+                console.error('Error sending message:', err);
+                addMessage(messageContainer, 'Failed to send message.', 'system');
+            }
+        }
+        
+        // === UI Functions ===
+        
+        // Add message to chat container
+        function addMessage(container, text, type = 'system', sender = null) {
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${type}`;
+            
+            if (type === 'system') {
+                messageElement.textContent = text;
+            } else {
+                if (sender && type === 'received') {
+                    const senderSpan = document.createElement('div');
+                    senderSpan.className = 'message-sender';
+                    senderSpan.textContent = sender;
+                    senderSpan.style.fontWeight = 'bold';
+                    senderSpan.style.fontSize = '0.8rem';
+                    senderSpan.style.marginBottom = '3px';
+                    messageElement.appendChild(senderSpan);
+                }
+                
+                const messageContent = document.createElement('div');
+                messageContent.textContent = text;
+                messageElement.appendChild(messageContent);
+            }
+            
+            container.appendChild(messageElement);
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        // Generate random username
+        function generateUsername() {
+            const adjectives = ['Swift', 'Bright', 'Cool', 'Clever', 'Fast', 'Kind', 'Calm', 'Bold', 'Smart', 'Quick'];
+            const nouns = ['Eagle', 'Wave', 'Star', 'Moon', 'Sun', 'Wind', 'Wolf', 'Fox', 'Bear', 'Lion'];
+            const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+            const noun = nouns[Math.floor(Math.random() * nouns.length)];
+            const num = Math.floor(Math.random() * 1000);
+            
+            return `${adj}${noun}${num}`;
+        }
+        
+        // Generate Connection Code
+        function generateConnectionCode() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let code = '';
+            
+            for (let i = 0; i < 6; i++) {
+                if (i === 3) code += '-';
+                code += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            
+            return code;
+        }
+        
+        // === Cryptography Functions ===
+        
+        // Generate encryption key
+        async function generateEncryptionKey() {
+            return await crypto.subtle.generateKey(
+                {
+                    name: "AES-GCM",
+                    length: 256
+                },
+                true,
+                ["encrypt", "decrypt"]
+            );
+        }
+        
+        // Generate initialization vector
+        function generateIV() {
+            // Use a counter-based IV for better performance
+            ivCounter++;
+            const buffer = new ArrayBuffer(12);
+            const view = new DataView(buffer);
+            
+            // Put the counter value in the last 4 bytes
+            view.setUint32(8, ivCounter, false);
+            
+            return Array.from(new Uint8Array(buffer));
+        }
+        
+        // Encrypt message
+        async function encryptMessage(message, key, iv) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(message);
+            
+            try {
+                const ivBuffer = new Uint8Array(iv);
+                
+                const encrypted = await crypto.subtle.encrypt(
+                    {
+                        name: "AES-GCM",
+                        iv: ivBuffer
+                    },
+                    key,
+                    data
+                );
+                
+                // Convert to base64 for easier transmission
+                return btoa(Array.from(new Uint8Array(encrypted), b => String.fromCharCode(b)).join(''));
+            } catch (err) {
+                console.error('Encryption error:', err);
+                throw err;
+            }
+        }
+        
+        // Decrypt message
+        async function decryptMessage(encryptedBase64, key, iv) {
+            try {
+                // Convert from base64
+                const encryptedStr = atob(encryptedBase64);
+                const encrypted = new Uint8Array(encryptedStr.split('').map(c => c.charCodeAt(0)));
+                
+                const ivBuffer = new Uint8Array(iv);
+                
+                const decrypted = await crypto.subtle.decrypt(
+                    {
+                        name: "AES-GCM",
+                        iv: ivBuffer
+                    },
+                    key,
+                    encrypted
+                );
+                
+                // Convert to string
+                const decoder = new TextDecoder();
+                return decoder.decode(decrypted);
+            } catch (err) {
+                console.error('Decryption error:', err);
+                return '(Message decryption failed)';
+            }
+        }
+        
+        // === Event Listeners ===
+        
+        // Random Chat Button
+        strangerChatBtn.addEventListener('click', () => {
+            randomChatModal.style.display = 'flex';
+            
+            // Reset UI
+            while (randomChatMessages.firstChild) {
+                randomChatMessages.removeChild(randomChatMessages.firstChild);
+            }
+            
+            addMessage(randomChatMessages, 'Looking for a chat partner...');
+            searchingAnimation.style.display = 'flex';
+            randomChatMessages.appendChild(searchingAnimation);
+            
+            // Send request to server to find peer
+            signalingSocket.send(JSON.stringify({
+                type: 'find_peer',
+                username: currentUsername,
+                useEncryption: encryptionToggle.checked,
+                useTor: torToggle.checked
+            }));
+        });
+        
+        // Create Room Button
+        createRoomBtn.addEventListener('click', () => {
+            privateRoomModal.style.display = 'flex';
+            
+            // Reset UI
+            while (privateChatMessages.firstChild) {
+                privateChatMessages.removeChild(privateChatMessages.firstChild);
+            }
+            
+            // Generate a connection code
+            const connectionCode = generateConnectionCode();
+            
+            // Send room creation request
+            signalingSocket.send(JSON.stringify({
+                type: 'create_room',
+                username: currentUsername,
+                connectionCode: connectionCode,
+                useEncryption: encryptionToggle.checked,
+                useTor: torToggle.checked
+            }));
+            
+            addMessage(privateChatMessages, 'Private P2P room ready! Share the connection code to chat.');
+        });
+        
+        // Join Room Button
+        joinRoomBtn.addEventListener('click', () => {
+            const roomCode = document.getElementById('roomCodeInput').value.trim();
+            if (!roomCode) return;
+            
+            joinRoomModal.style.display = 'flex';
+            
+            // Reset UI
+            while (joinChatMessages.firstChild) {
+                joinChatMessages.removeChild(joinChatMessages.firstChild);
+            }
+            
+            addMessage(joinChatMessages, `Connecting to room ${roomCode}...`);
+            joiningAnimation.style.display = 'flex';
+            joinChatMessages.appendChild(joiningAnimation);
+            
+            // Send join request
+            signalingSocket.send(JSON.stringify({
+                type: 'join_room',
+                username: currentUsername,
+                connectionCode: roomCode,
+                useEncryption: encryptionToggle.checked,
+                useTor: torToggle.checked
+            }));
+        });
+        
+        // Close buttons
+        closeRandomChat.addEventListener('click', () => {
+            randomChatModal.style.display = 'none';
+            
+            if (isConnectedToStranger) {
+                // Send disconnect message to peer
+                if (dataChannel && dataChannel.readyState === 'open') {
+                    try {
+                        const disconnectMsg = {
+                            type: 'system',
+                            text: 'The other party has disconnected.'
+                        };
+                        
+                        if (encryptionToggle.checked) {
+                            const iv = generateIV();
+                            disconnectMsg.text = encryptMessage(disconnectMsg.text, encryptionKey, iv);
+                            disconnectMsg.iv = iv;
+                        }
+                        
+                        dataChannel.send(JSON.stringify(disconnectMsg));
+                    } catch (err) {
+                        console.error('Error sending disconnect message:', err);
+                    }
+                }
+                
+                // Close connections
+                if (dataChannel) {
+                    dataChannel.close();
+                    dataChannel = null;
+                }
+                
+                if (peerConnection) {
+                    peerConnection.close();
+                    peerConnection = null;
+                }
+                
+                isConnectedToStranger = false;
+            } else {
+                // If still searching, cancel search
+                signalingSocket.send(JSON.stringify({
+                    type: 'cancel_search',
+                    username: currentUsername
+                }));
+            }
+        });
+        
+        closePrivateRoom.addEventListener('click', () => {
+            privateRoomModal.style.display = 'none';
+            
+            if (isConnectedToPrivateRoom) {
+                // Send disconnect message to peer
+                if (dataChannel && dataChannel.readyState === 'open') {
+                    try {
+                        const disconnectMsg = {
+                            type: 'system',
+                            text: 'The room host has disconnected.'
+                        };
+                        
+                        if (encryptionToggle.checked) {
+                            const iv = generateIV();
+                            disconnectMsg.text = encryptMessage(disconnectMsg.text, encryptionKey, iv);
+                            disconnectMsg.iv = iv;
+                        }
+                        
+                        dataChannel.send(JSON.stringify(disconnectMsg));
+                    } catch (err) {
+                        console.error('Error sending disconnect message:', err);
+                    }
+                }
+                
+                // Close room on server
+                signalingSocket.send(JSON.stringify({
+                    type: 'close_room',
+                    roomId: currentRoomId
+                }));
+                
+                // Close connections
+                if (dataChannel) {
+                    dataChannel.close();
+                    dataChannel = null;
+                }
+                
+                if (peerConnection) {
+                    peerConnection.close();
+                    peerConnection = null;
+                }
+                
+                isConnectedToPrivateRoom = false;
+                currentRoomId = '';
+            }
+        });
+        
+        closeJoinRoom.addEventListener('click', () => {
+            joinRoomModal.style.display = 'none';
+            
+            if (isConnectedToPrivateRoom || isJoiningRoom) {
+                // Send disconnect message to peer
+                if (dataChannel && dataChannel.readyState === 'open') {
+                    try {
+                        const disconnectMsg = {
+                            type: 'system',
+                            text: 'The other participant has disconnected.'
+                        };
+                        
+                        if (encryptionToggle.checked) {
+                            const iv = generateIV();
+                            disconnectMsg.text = encryptMessage(disconnectMsg.text, encryptionKey, iv);
+                            disconnectMsg.iv = iv;
+                        }
+                        
+                        dataChannel.send(JSON.stringify(disconnectMsg));
+                    } catch (err) {
+                        console.error('Error sending disconnect message:', err);
+                    }
+                }
+                
+                // Leave room on server
+                signalingSocket.send(JSON.stringify({
+                    type: 'leave_room',
+                    roomId: currentRoomId,
+                    username: currentUsername
+                }));
+                
+                // Close connections
+                if (dataChannel) {
+                    dataChannel.close();
+                    dataChannel = null;
+                }
+                
+                if (peerConnection) {
+                    peerConnection.close();
+                    peerConnection = null;
+                }
+                
+                isConnectedToPrivateRoom = false;
+                isJoiningRoom = false;
+                currentRoomId = '';
+            }
+        });
+        
+        // Send buttons
+        randomSendBtn.addEventListener('click', () => {
+            sendMessage('random');
+        });
+        
+        privateSendBtn.addEventListener('click', () => {
+            sendMessage('private');
+        });
+        
+        joinSendBtn.addEventListener('click', () => {
+            sendMessage('join');
+        });
+        
+        // Send message on Enter key
+        randomChatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage('random');
+                e.preventDefault();
+            }
+        });
+        
+        privateChatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage('private');
+                e.preventDefault();
+            }
+        });
+        
+        joinChatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage('join');
+                e.preventDefault();
+            }
+        });
+        
+        // Copy room code button
+        copyRoomCode.addEventListener('click', () => {
+            navigator.clipboard.writeText(generatedRoomCode.textContent)
+                .then(() => {
+                    copyRoomCode.innerHTML = `
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                    `;
+                    
+                    setTimeout(() => {
+                        copyRoomCode.innerHTML = `
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                        `;
+                    }, 2000);
+                })
+                .catch(err => {
+                    console.error('Could not copy text: ', err);
+                });
+        });
+        
+        // Initialize app by connecting to signaling server
+        connectToSignalingServer();
+    </script>
 </body>
 </html>
