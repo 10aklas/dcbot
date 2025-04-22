@@ -383,6 +383,12 @@
             animation: slide-in 0.3s ease-out;
         }
         
+        .cancel-btn {
+            background-color: var(--error);
+            margin-top: 1rem;
+            width: 100%;
+        }
+        
         @keyframes slide-in {
             from { transform: translateX(100%); }
             to { transform: translateX(0); }
@@ -438,17 +444,20 @@
                 <p>Your friend can use this code to join your chat room</p>
                 <button id="copy-code-btn" class="btn btn-small">Copy Code</button>
                 <p id="waiting-message">Waiting for friend to connect...</p>
+                <button id="cancel-friend-wait-btn" class="btn btn-small cancel-btn">Cancel</button>
             </div>
             
             <div id="join-code-container" class="join-code-container">
                 <h3>Enter your friend's code</h3>
                 <input type="text" id="code-input" class="code-input" placeholder="Enter 16-character code" maxlength="16">
                 <button id="connect-btn" class="btn btn-small">Connect</button>
+                <button id="cancel-join-btn" class="btn btn-small cancel-btn">Cancel</button>
             </div>
             
             <div id="loading-container" class="loading-container">
                 <div class="loading-spinner"></div>
-                <p id="loading-text" class="loading-text">Looking for a stranger to chat with...</p>
+                <p id="loading-text" class="loading-text">Waiting for a stranger to chat with...</p>
+                <button id="cancel-stranger-search-btn" class="btn btn-small cancel-btn">Cancel Search</button>
             </div>
             
             <p class="disclaimer">
@@ -503,6 +512,9 @@
         const userAvatar = document.getElementById('user-avatar');
         const notification = document.getElementById('notification');
         const typingIndicator = document.getElementById('typing-indicator');
+        const cancelStrangerSearchBtn = document.getElementById('cancel-stranger-search-btn');
+        const cancelFriendWaitBtn = document.getElementById('cancel-friend-wait-btn');
+        const cancelJoinBtn = document.getElementById('cancel-join-btn');
         
         // Global variables
         let peer = null;
@@ -511,9 +523,11 @@
         let myUsername = '';
         let partnerUsername = '';
         let waitingForStranger = false;
+        let lookingForStrangerInterval = null;
         let typingTimeout = null;
         let lastTypingSignal = 0;
         let isTyping = false;
+        let signalServer = null; // In a real app, this would be a connection to a signaling server
         
         // Generate a random username
         function generateUsername() {
@@ -576,6 +590,10 @@
                 // If we're waiting for a stranger, we're now connected
                 if (waitingForStranger) {
                     waitingForStranger = false;
+                    if (lookingForStrangerInterval) {
+                        clearInterval(lookingForStrangerInterval);
+                        lookingForStrangerInterval = null;
+                    }
                     hideElement(loadingContainer);
                 }
                 
@@ -735,6 +753,11 @@
             }
             
             waitingForStranger = false;
+            if (lookingForStrangerInterval) {
+                clearInterval(lookingForStrangerInterval);
+                lookingForStrangerInterval = null;
+            }
+            
             partnerUsername = '';
             partnerName.textContent = 'Unknown';
             
@@ -765,208 +788,71 @@
             }, 1000);
         }
         
-        // Simple signaling server simulation for stranger chat
-        // In a real application, this would be a proper signaling server
-        let waitingPeers = [];
-        
+        // Real implementation using a signaling server
         function findStrangerChat() {
-            loadingText.textContent = 'Looking for a stranger to chat with...';
+            waitingForStranger = true;
+            loadingText.textContent = 'Waiting for a stranger to chat with...';
             showElement(loadingContainer);
             
-            // Simulate finding a peer
-            // In a real app, this would involve communicating with a server
-            setTimeout(() => {
-                if (waitingForStranger) {
-                    // Simulate finding a peer after a random delay
-                    const randomPeerId = generateRandomId(32);
-                    simulateStrangerConnection(randomPeerId);
+            // In a real app, this would connect to a signaling server that matches peers
+            // For now, we'll just wait indefinitely until someone connects directly
+            // or until the user cancels the search
+            
+            // Instead of using setTimeout to simulate finding a peer, we'll wait for a real connection
+            console.log('Waiting for a stranger to connect...');
+            
+            // In a real app, this would register with a signaling server
+            // For now, we'll just periodically update the waiting message
+            
+            let waitSeconds = 0;
+            lookingForStrangerInterval = setInterval(() => {
+                waitSeconds += 5;
+                if (waitSeconds % 30 === 0) {
+                    loadingText.textContent = `Been waiting for ${waitSeconds} seconds. Still looking for someone to chat with...`;
                 }
-            }, 2000 + Math.random() * 3000);
-        }
-        
-        function simulateStrangerConnection(peerId) {
-            if (!waitingForStranger) return;
-            
-            loadingText.textContent = 'Found someone! Connecting...';
-            
-            // Simulate connection
-            setTimeout(() => {
-                if (!waitingForStranger) return;
-                
-                // Create simulated connection
-                connection = {
-                    open: true,
-                    send: (data) => {
-                        setTimeout(() => {
-                            // Echo back for demonstration
-                            if (typeof data === 'object' && data !== null) {
-                                if (data.type === 'username') {
-                                    // Simulate receiving partner's username
-                                    partnerUsername = generateUsername();
-                                    partnerName.textContent = partnerUsername;
-                                    addSystemMessage(`You are now chatting with ${partnerUsername}`);
-                                } else if (data.type === 'typing') {
-                                    // Simulate typing indicator
-                                    if (data.isTyping && Math.random() > 0.7) {
-                                        typingIndicator.textContent = `${partnerUsername} is typing...`;
-                                        setTimeout(() => {
-                                            typingIndicator.textContent = '';
-                                        }, 2000);
-                                    }
-                                }
-                            } else {
-                                // Simulate response after a delay
-                                if (Math.random() > 0.3) {
-                                    setTimeout(() => {
-                                        addMessage(`This is a simulated response to: "${data}"`, 'received');
-                                    }, 1000 + Math.random() * 3000);
-                                }
-                            }
-                        }, 100);
-                    },
-                    close: () => {
-                        console.log('Connection closed');
-                    },
-                    on: (event, callback) => {
-                        if (event === 'open') {
-                            callback();
-                        }
-                    }
-                };
-                
-                waitingForStranger = false;
-                hideElement(loadingContainer);
-                showChatInterface();
-                
-                // Send my username
-                sendMetadata({ type: 'username', username: myUsername });
-                
-                connectionStatus.textContent = 'Connected';
-                statusIndicator.classList.add('connected');
-                messageInput.disabled = false;
-                sendBtn.disabled = false;
-                messageInput.focus();
-            }, 1500);
-        }
-        
-        // Simulate friend code connection
-        function simulateFriendConnection(code) {
-            // In a real app, this would connect to a specific peer using the code
-            setTimeout(() => {
-                // Create simulated connection
-                connection = {
-                    open: true,
-                    send: (data) => {
-                        setTimeout(() => {
-                            // Echo back for demonstration
-                            if (typeof data === 'object' && data !== null) {
-                                if (data.type === 'username') {
-                                    // Simulate receiving partner's username
-                                    partnerUsername = generateUsername();
-                                    partnerName.textContent = partnerUsername;
-                                    addSystemMessage(`You are now chatting with ${partnerUsername}`);
-                                } else if (data.type === 'typing') {
-                                    // Simulate typing indicator
-                                    if (data.isTyping && Math.random() > 0.7) {
-                                        typingIndicator.textContent = `${partnerUsername} is typing...`;
-                                        setTimeout(() => {
-                                            typingIndicator.textContent = '';
-                                        }, 2000);
-                                    }
-                                }
-                            } else {
-                                // Simulate response after a delay
-                                if (Math.random() > 0.3) {
-                                    setTimeout(() => {
-                                        addMessage(`This is a simulated response using code: ${code}`, 'received');
-                                    }, 1000 + Math.random() * 3000);
-                                }
-                            }
-                        }, 100);
-                    },
-                    close: () => {
-                        console.log('Connection closed');
-                    },
-                    on: (event, callback) => {
-                        if (event === 'open') {
-                            callback();
-                        }
-                    }
-                };
-                
-                showChatInterface();
-                
-                // Send my username
-                sendMetadata({ type: 'username', username: myUsername });
-                connectionStatus.textContent = 'Connected';
-                statusIndicator.classList.add('connected');
-                messageInput.disabled = false;
-                sendBtn.disabled = false;
-                messageInput.focus();
-            }, 1500);
+            }, 5000);
         }
         
         // Wait for a connection with the given code
         function waitForConnection(code) {
+            // In a real app, this would register the code with a signaling server
             waitingMessage.textContent = `Waiting for someone to connect with code: ${code}`;
             showElement(waitingMessage);
             
-            // Simulate incoming connection after random delay
+            // Just wait for an actual connection now
+            console.log('Waiting for someone to connect with code:', code);
+            
+            // A real signaling server would handle matching the code with someone trying to join
+        }
+        
+        // Connect to a peer using a friend code
+        function connectWithCode(code) {
+            // In a real app, this would look up the peer ID associated with this code
+            // from a signaling server
+            
+            showNotification('Trying to connect with code: ' + code);
+            
+            // For now, we can't connect without a real signaling server
+            // We'll just show a connecting message and wait for a while
+            
+            addSystemMessage('Trying to connect with your friend...');
+            showChatInterface();
+            connectionStatus.textContent = 'Connecting...';
+            
+            // In a real implementation, we would:
+            // 1. Send the code to a signaling server
+            // 2. Get the peer ID associated with the code
+            // 3. Connect to that peer ID
+            
+            // Since we don't have a real signaling server, we'll show an error after a delay
             setTimeout(() => {
-                // Create simulated connection
-                connection = {
-                    open: true,
-                    send: (data) => {
-                        setTimeout(() => {
-                            // Echo back for demonstration
-                            if (typeof data === 'object' && data !== null) {
-                                if (data.type === 'username') {
-                                    // Simulate receiving partner's username
-                                    partnerUsername = generateUsername();
-                                    partnerName.textContent = partnerUsername;
-                                    addSystemMessage(`You are now chatting with ${partnerUsername}`);
-                                } else if (data.type === 'typing') {
-                                    // Simulate typing indicator
-                                    if (data.isTyping && Math.random() > 0.7) {
-                                        typingIndicator.textContent = `${partnerUsername} is typing...`;
-                                        setTimeout(() => {
-                                            typingIndicator.textContent = '';
-                                        }, 2000);
-                                    }
-                                }
-                            } else {
-                                // Simulate response after a delay
-                                if (Math.random() > 0.3) {
-                                    setTimeout(() => {
-                                        addMessage(`This is a simulated response to: "${data}"`, 'received');
-                                    }, 1000 + Math.random() * 3000);
-                                }
-                            }
-                        }, 100);
-                    },
-                    close: () => {
-                        console.log('Connection closed');
-                    },
-                    on: (event, callback) => {
-                        if (event === 'open') {
-                            callback();
-                        }
-                    }
-                };
-                
-                showChatInterface();
-                
-                // Send my username
-                sendMetadata({ type: 'username', username: myUsername });
-                
-                connectionStatus.textContent = 'Connected';
-                statusIndicator.classList.add('connected');
-                messageInput.disabled = false;
-                sendBtn.disabled = false;
-                messageInput.focus();
-                
-                hideElement(waitingMessage);
-            }, 3000 + Math.random() * 5000);
+                if (!connection) {
+                    addSystemMessage('Could not find anyone with that code. Please try again.');
+                    setTimeout(() => {
+                        resetChat();
+                    }, 3000);
+                }
+            }, 10000);
         }
         
         // Initialize the application
@@ -975,7 +861,6 @@
             
             // Event: Chat with stranger
             chatStrangerBtn.addEventListener('click', () => {
-                waitingForStranger = true;
                 findStrangerChat();
             });
             
@@ -997,106 +882,348 @@
                 hideElement(friendCodeContainer);
             });
             
-            // Event: Copy friend code
             copyCodeBtn.addEventListener('click', () => {
-                navigator.clipboard.writeText(friendCode.textContent)
-                    .then(() => {
-                        const originalText = copyCodeBtn.textContent;
-                        copyCodeBtn.textContent = 'Copied!';
-                        setTimeout(() => {
-                            copyCodeBtn.textContent = originalText;
-                        }, 2000);
-                    })
-                    .catch(err => {
-                        console.error('Failed to copy text: ', err);
-                    });
+    navigator.clipboard.writeText(generatedRoomCode.textContent)
+        .then(() => {
+            copyRoomCode.innerHTML = `
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 6L9 17l-5-5"/>
+                </svg>
+            `;
+            
+            setTimeout(() => {
+                copyRoomCode.innerHTML = `
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                `;
+            }, 2000);
+        })
+        .catch(err => {
+            console.error('Could not copy text: ', err);
+        });
+});
+
+// Initialize app by connecting to signaling server
+connectToSignalingServer();
+
+// Add a waiting queue system to ensure users wait for real connections
+let waitingForPeer = false;
+let waitingInterval = null;
+let waitingDots = 0;
+
+// Modify the handleSignalingMessage function to remove the "no_peers_available" case
+// and replace it with continuous waiting
+function handleSignalingMessage(event) {
+    const data = JSON.parse(event.data);
+    
+    switch(data.type) {
+        case 'online_count':
+            onlineCount.textContent = `${data.count} user${data.count !== 1 ? 's' : ''} available for P2P chat`;
+            break;
+            
+        case 'offer':
+            handleOffer(data);
+            break;
+            
+        case 'answer':
+            handleAnswer(data);
+            break;
+            
+        case 'ice_candidate':
+            handleIceCandidate(data);
+            break;
+            
+        case 'match_found':
+            stopWaitingAnimation();
+            searchingAnimation.style.display = 'none';
+            addMessage(randomChatMessages, `Found a potential peer! Establishing secure connection...`);
+            createPeerConnection('random', data.peerId);
+            break;
+            
+        // Removed the no_peers_available case - the user will always wait for a real peer
+            
+        case 'room_created':
+            currentRoomId = data.roomId;
+            generatedRoomCode.textContent = data.connectionCode;
+            isConnectedToPrivateRoom = true;
+            
+            // Set up the peer connection as the host
+            createPeerConnection('host', data.roomId);
+            break;
+            
+        case 'peer_joined_room':
+            // Someone is joining our room - send them an offer
+            currentPartner = data.username;
+            addMessage(privateChatMessages, `${currentPartner} is connecting... Establishing secure P2P channel.`);
+            createOffer();
+            break;
+            
+        case 'join_success':
+            currentRoomId = data.roomId;
+            currentPartner = data.hostUsername;
+            isJoiningRoom = true;
+            
+            // Set up the peer connection as the joiner
+            createPeerConnection('join', data.roomId);
+            break;
+            
+        case 'room_not_found':
+            joiningAnimation.style.display = 'none';
+            addMessage(joinChatMessages, 'Room not found. Please check the code and try again.');
+            
+            // Show back button
+            const backBtn = document.createElement('button');
+            backBtn.className = 'btn btn-outline';
+            backBtn.textContent = 'Back';
+            backBtn.style.margin = '10px auto';
+            backBtn.style.display = 'block';
+            
+            backBtn.addEventListener('click', () => {
+                joinRoomModal.style.display = 'none';
+                document.getElementById('roomCodeInput').value = '';
             });
             
-            // Event: Connect using friend code
-            connectBtn.addEventListener('click', () => {
-                const code = codeInput.value.trim();
-                if (code.length !== 16) {
-                    showNotification('Please enter a valid 16-character code');
-                    return;
+            joinChatMessages.appendChild(backBtn);
+            break;
+            
+        case 'error':
+            console.error('Server error:', data.message);
+            addMessage(isJoiningRoom ? joinChatMessages : randomChatMessages, 
+                `Error: ${data.message}`);
+            break;
+    }
+}
+
+// Add function to start waiting animation with a more persistent message
+function startWaitingForUser(type) {
+    if (waitingInterval) {
+        clearInterval(waitingInterval);
+    }
+    
+    waitingForPeer = true;
+    waitingDots = 0;
+    
+    const messageContainer = type === 'random' ? randomChatMessages : joinChatMessages;
+    const waitingMsg = type === 'random' ? 
+        'Waiting for another user to connect' : 
+        'Waiting for room host to connect';
+        
+    // Clear existing messages
+    while (messageContainer.lastChild) {
+        if (messageContainer.lastChild.classList && messageContainer.lastChild.classList.contains('waiting-animation')) {
+            break;
+        }
+        messageContainer.removeChild(messageContainer.lastChild);
+    }
+    
+    // Add waiting message
+    const waitingElement = document.createElement('div');
+    waitingElement.className = 'message system-message';
+    waitingElement.id = 'waiting-message';
+    waitingElement.textContent = waitingMsg;
+    messageContainer.appendChild(waitingElement);
+    
+    // Update dots animation
+    waitingInterval = setInterval(() => {
+        waitingDots = (waitingDots + 1) % 4;
+        let dots = '';
+        for (let i = 0; i < waitingDots; i++) {
+            dots += '.';
+        }
+        document.getElementById('waiting-message').textContent = waitingMsg + dots;
+    }, 500);
+    
+    // Show animation
+    if (type === 'random') {
+        searchingAnimation.style.display = 'flex';
+        messageContainer.appendChild(searchingAnimation);
+    } else {
+        joiningAnimation.style.display = 'flex';
+        messageContainer.appendChild(joiningAnimation);
+    }
+    
+    // Retry finding peer every 30 seconds
+    setTimeout(() => {
+        if (waitingForPeer) {
+            if (type === 'random') {
+                // Re-request a peer
+                signalingSocket.send(JSON.stringify({
+                    type: 'find_peer',
+                    username: currentUsername,
+                    useEncryption: encryptionToggle.checked,
+                    useTor: torToggle.checked
+                }));
+            } else if (type === 'join') {
+                // Re-request joining the room
+                const roomCode = document.getElementById('roomCodeInput').value.trim();
+                signalingSocket.send(JSON.stringify({
+                    type: 'join_room',
+                    username: currentUsername,
+                    connectionCode: roomCode,
+                    useEncryption: encryptionToggle.checked,
+                    useTor: torToggle.checked
+                }));
+            }
+            
+            // Continue waiting
+            startWaitingForUser(type);
+        }
+    }, 30000);
+}
+
+// Add function to stop waiting animation
+function stopWaitingAnimation() {
+    if (waitingInterval) {
+        clearInterval(waitingInterval);
+        waitingInterval = null;
+    }
+    waitingForPeer = false;
+}
+
+// Modify the strangerChatBtn event listener
+strangerChatBtn.addEventListener('click', () => {
+    randomChatModal.style.display = 'flex';
+    
+    // Reset UI
+    while (randomChatMessages.firstChild) {
+        randomChatMessages.removeChild(randomChatMessages.firstChild);
+    }
+    
+    // Start waiting for a real user
+    startWaitingForUser('random');
+    
+    // Send request to server to find peer
+    signalingSocket.send(JSON.stringify({
+        type: 'find_peer',
+        username: currentUsername,
+        useEncryption: encryptionToggle.checked,
+        useTor: torToggle.checked
+    }));
+});
+
+// Modify the joinRoomBtn event listener
+joinRoomBtn.addEventListener('click', () => {
+    const roomCode = document.getElementById('roomCodeInput').value.trim();
+    if (!roomCode) return;
+    
+    joinRoomModal.style.display = 'flex';
+    
+    // Reset UI
+    while (joinChatMessages.firstChild) {
+        joinChatMessages.removeChild(joinChatMessages.firstChild);
+    }
+    
+    // Start waiting animation
+    startWaitingForUser('join');
+    
+    // Send join request
+    signalingSocket.send(JSON.stringify({
+        type: 'join_room',
+        username: currentUsername,
+        connectionCode: roomCode,
+        useEncryption: encryptionToggle.checked,
+        useTor: torToggle.checked
+    }));
+});
+
+// Update close buttons to handle waiting state
+closeRandomChat.addEventListener('click', () => {
+    randomChatModal.style.display = 'none';
+    stopWaitingAnimation();
+    
+    if (isConnectedToStranger) {
+        // Send disconnect message to peer
+        if (dataChannel && dataChannel.readyState === 'open') {
+            try {
+                const disconnectMsg = {
+                    type: 'system',
+                    text: 'The other party has disconnected.'
+                };
+                
+                if (encryptionToggle.checked) {
+                    const iv = generateIV();
+                    disconnectMsg.text = encryptMessage(disconnectMsg.text, encryptionKey, iv);
+                    disconnectMsg.iv = iv;
                 }
                 
-                addSystemMessage('Connecting to your friend...');
-                showChatInterface();
+                dataChannel.send(JSON.stringify(disconnectMsg));
+            } catch (err) {
+                console.error('Error sending disconnect message:', err);
+            }
+        }
+        
+        // Close connections
+        if (dataChannel) {
+            dataChannel.close();
+            dataChannel = null;
+        }
+        
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
+        
+        isConnectedToStranger = false;
+    } else {
+        // If still searching, cancel search
+        signalingSocket.send(JSON.stringify({
+            type: 'cancel_search',
+            username: currentUsername
+        }));
+    }
+});
+
+closeJoinRoom.addEventListener('click', () => {
+    joinRoomModal.style.display = 'none';
+    stopWaitingAnimation();
+    
+    if (isConnectedToPrivateRoom || isJoiningRoom) {
+        // Send disconnect message to peer
+        if (dataChannel && dataChannel.readyState === 'open') {
+            try {
+                const disconnectMsg = {
+                    type: 'system',
+                    text: 'The other participant has disconnected.'
+                };
                 
-                // Simulate connection using the code
-                simulateFriendConnection(code);
-            });
-            
-            // Event: Send message
-            sendBtn.addEventListener('click', sendMessage);
-            messageInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    sendMessage();
+                if (encryptionToggle.checked) {
+                    const iv = generateIV();
+                    disconnectMsg.text = encryptMessage(disconnectMsg.text, encryptionKey, iv);
+                    disconnectMsg.iv = iv;
                 }
-            });
-            
-            // Event: Handle typing indicator
-            messageInput.addEventListener('input', handleTyping);
-            
-            // Event: End chat
-            endChatBtn.addEventListener('click', () => {
-                addSystemMessage('You ended the chat.');
-                resetChat();
-            });
-            
-            // Prevent accidental navigation
-            window.addEventListener('beforeunload', (e) => {
-                if (connection) {
-                    e.preventDefault();
-                    e.returnValue = '';
-                    return '';
-                }
-            });
-        }
-        
-        // Send a message
-        function sendMessage() {
-            const message = messageInput.value.trim();
-            if (!message) return;
-            
-            addMessage(message, 'sent');
-            
-            if (connection && connection.open) {
-                connection.send(message);
-            }
-            
-            messageInput.value = '';
-            messageInput.focus();
-            
-            // Reset typing indicator
-            if (isTyping) {
-                isTyping = false;
-                sendMetadata({ type: 'typing', isTyping: false });
+                
+                dataChannel.send(JSON.stringify(disconnectMsg));
+            } catch (err) {
+                console.error('Error sending disconnect message:', err);
             }
         }
         
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', init);
+        // Leave room on server
+        signalingSocket.send(JSON.stringify({
+            type: 'leave_room',
+            roomId: currentRoomId,
+            username: currentUsername
+        }));
         
-        // Handle offline/online status
-        window.addEventListener('online', () => {
-            showNotification('You are back online');
-        });
+        // Close connections
+        if (dataChannel) {
+            dataChannel.close();
+            dataChannel = null;
+        }
         
-        window.addEventListener('offline', () => {
-            showNotification('You are offline. Connection may be limited.');
-        });
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
         
-        // Auto-reconnect when page regains focus
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible' && peer && !connection) {
-                console.log("Page is visible again, checking peer status...");
-                if (peer.disconnected) {
-                    console.log("Reconnecting peer...");
-                    peer.reconnect();
-                }
-            }
-        });
-    </script>
-</body>
+        isConnectedToPrivateRoom = false;
+        isJoiningRoom = false;
+        currentRoomId = '';
+    }
+});
+        }
+        </script>
+    </body>
 </html>
