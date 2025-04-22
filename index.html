@@ -3,20 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Emerald - Anonymous P2P Chat</title>
+    <title>ORLEQTOR - Anonymous P2P Chat</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <style>
         :root {
-            --primary: #2ecc71;
-            --primary-dark: #27ae60;
-            --secondary: #1abc9c;
-            --dark: #1a1a1a;
-            --darker: #121212;
-            --light-text: #e0e0e0;
-            --mid-gray: #333333;
-            --card-bg: #222222;
-            --input-bg: #2c2c2c;
-            --message-sent: #2ecc71;
-            --message-received: #333333;
+            --background: #121212;
+            --surface: #1e1e1e;
+            --primary: #bb86fc;
+            --secondary: #03dac6;
+            --text: #e0e0e0;
+            --text-secondary: #a0a0a0;
+            --error: #cf6679;
+            --success: #4caf50;
         }
         
         * {
@@ -27,1688 +26,1077 @@
         }
         
         body {
-            background-color: var(--darker);
-            color: var(--light-text);
-            min-height: 100vh;
+            background-color: var(--background);
+            color: var(--text);
+            height: 100vh;
             display: flex;
             flex-direction: column;
         }
         
         header {
-            background: var(--dark);
-            color: var(--primary);
-            padding: 1rem;
+            background-color: var(--surface);
+            padding: 1rem 2rem;
             text-align: center;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-            border-bottom: 1px solid var(--primary-dark);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            position: relative;
         }
         
-        .logo {
-            font-size: 2rem;
-            font-weight: bold;
+        h1 {
+            color: var(--primary);
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .tagline {
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        
+        .user-info {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
             display: flex;
             align-items: center;
-            justify-content: center;
-            gap: 10px;
+            gap: 0.5rem;
+            background-color: rgba(0, 0, 0, 0.2);
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
         }
         
-        .content {
-            flex: 1;
-            padding: 2rem;
-            max-width: 1200px;
-            margin: 0 auto;
-            width: 100%;
-        }
-        
-        .intro {
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-        
-        .intro h2 {
-            margin-bottom: 1rem;
-            color: var(--primary);
-        }
-        
-        .intro p {
-            color: var(--light-text);
-            max-width: 700px;
-            margin: 0 auto;
-            line-height: 1.6;
-        }
-        
-        .status-indicator {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 1rem 0;
-            gap: 10px;
-        }
-        
-        .status-dot {
-            width: 10px;
-            height: 10px;
+        .user-avatar {
+            width: 24px;
+            height: 24px;
             border-radius: 50%;
-            background-color: #888;
-        }
-        
-        .status-dot.online {
             background-color: var(--primary);
-            box-shadow: 0 0 8px var(--primary);
-        }
-        
-        .chat-options {
             display: flex;
-            flex-wrap: wrap;
-            gap: 2rem;
+            align-items: center;
             justify-content: center;
-            margin: 2rem 0;
+            font-weight: bold;
+            font-size: 12px;
         }
         
-        .option-card {
-            background: var(--card-bg);
-            border-radius: 10px;
-            padding: 2rem;
+        main {
             flex: 1;
-            min-width: 300px;
-            max-width: 500px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
             display: flex;
             flex-direction: column;
+            padding: 2rem;
+        }
+        
+        .welcome-screen {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
             align-items: center;
+            gap: 2rem;
             text-align: center;
-            border: 1px solid var(--mid-gray);
         }
         
-        .option-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.4);
-            border-color: var(--primary-dark);
-        }
-        
-        .option-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-            color: var(--primary);
-        }
-        
-        .option-card h3 {
-            color: var(--light-text);
-            margin-bottom: 1rem;
-        }
-        
-        .option-card p {
-            color: #aaa;
-            margin-bottom: 1.5rem;
-            line-height: 1.5;
+        .buttons {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1rem;
         }
         
         .btn {
-            padding: 0.8rem 1.5rem;
-            border: none;
-            border-radius: 5px;
-            font-weight: bold;
+            background-color: var(--surface);
+            color: var(--text);
+            border: 2px solid var(--primary);
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            font-size: 1.2rem;
             cursor: pointer;
             transition: all 0.3s ease;
+            min-width: 250px;
         }
         
-        .btn-primary {
-            background: var(--primary);
-            color: var(--dark);
+        .btn:hover {
+            background-color: var(--primary);
+            color: var(--background);
+            transform: translateY(-3px);
         }
         
-        .btn-primary:hover {
-            background: var(--primary-dark);
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
         }
         
-        .btn-secondary {
-            background: var(--secondary);
-            color: var(--dark);
+        .btn-small {
+            padding: 0.5rem 1rem;
+            font-size: 1rem;
+            min-width: auto;
         }
         
-        .btn-secondary:hover {
-            background: #16a085;
-        }
-        
-        .btn-outline {
-            background: transparent;
-            border: 2px solid var(--primary);
-            color: var(--primary);
-        }
-        
-        .btn-outline:hover {
-            background: var(--primary);
-            color: var(--dark);
-        }
-
-        /* Modal Styles */
-        .modal {
+        .friend-code-container {
             display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.8);
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        
-        .modal-content {
-            background: var(--dark);
-            padding: 2rem;
-            border-radius: 10px;
-            width: 90%;
-            max-width: 600px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
-            position: relative;
-            border: 1px solid var(--mid-gray);
-        }
-        
-        .close-modal {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            font-size: 1.5rem;
-            cursor: pointer;
-            color: #aaa;
-        }
-        
-        .close-modal:hover {
-            color: var(--primary);
-        }
-        
-        .chat-container {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-        }
-        
-        .chat-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 1rem 0;
-            border-bottom: 1px solid var(--mid-gray);
-            margin-bottom: 1rem;
-        }
-        
-        .username {
-            font-weight: bold;
-            color: var(--primary);
-        }
-
-        .chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 1rem;
-            background: var(--darker);
-            border-radius: 5px;
-            height: 300px;
-            margin-bottom: 1rem;
-            border: 1px solid var(--mid-gray);
-        }
-        
-        .message {
-            margin-bottom: 1rem;
-            padding: 0.8rem;
+            margin-top: 2rem;
+            background-color: var(--surface);
+            padding: 1rem 2rem;
             border-radius: 8px;
-            max-width: 80%;
-            word-break: break-word;
-        }
-        
-        .received {
-            background: var(--message-received);
-            align-self: flex-start;
-        }
-        
-        .sent {
-            background: var(--message-sent);
-            color: var(--dark);
-            align-self: flex-end;
-            margin-left: auto;
-        }
-        
-        .system-message {
-            background: transparent;
-            color: #888;
             text-align: center;
-            font-style: italic;
-            margin: 0.5rem auto;
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        .code-display {
+            font-size: 1.5rem;
+            color: var(--secondary);
+            background-color: rgba(3, 218, 198, 0.1);
             padding: 0.5rem;
-            max-width: 100%;
+            border-radius: 4px;
+            margin: 1rem 0;
+            user-select: all;
         }
         
-        .chat-input {
-            display: flex;
-            gap: 10px;
+        .join-code-container {
+            display: none;
+            margin-top: 2rem;
+            background-color: var(--surface);
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
         }
         
-        .chat-input input {
-            flex: 1;
-            padding: 0.8rem;
-            border: 1px solid var(--mid-gray);
-            border-radius: 5px;
-            background: var(--input-bg);
-            color: var(--light-text);
+        .code-input {
+            width: 100%;
+            padding: 0.5rem 1rem;
+            font-size: 1.2rem;
+            background-color: rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--secondary);
+            border-radius: 4px;
+            color: var(--text);
+            margin: 1rem 0;
         }
         
-        .chat-input input:focus {
-            outline: none;
-            border-color: var(--primary);
-        }
-        
-        .join-room {
+        .loading-container {
+            display: none;
             margin-top: 2rem;
             text-align: center;
         }
         
-        .join-room h3 {
-            margin-bottom: 1rem;
-        }
-        
-        .join-form {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
-            max-width: 500px;
-            margin: 0 auto;
-        }
-        
-        .join-form input {
-            flex: 1;
-            padding: 0.8rem;
-            border: 1px solid var(--mid-gray);
-            border-radius: 5px;
-            background: var(--input-bg);
-            color: var(--light-text);
-        }
-        
-        .join-form input:focus {
-            outline: none;
-            border-color: var(--primary);
-        }
-
-        .room-code {
-            background: var(--darker);
-            padding: 1rem;
-            border-radius: 5px;
-            margin: 1rem 0;
-            font-family: monospace;
-            font-size: 1.2rem;
-            letter-spacing: 2px;
-            text-align: center;
-            border: 1px solid var(--mid-gray);
-        }
-        
-        .copy-btn {
-            background: transparent;
-            border: none;
-            color: var(--primary);
-            cursor: pointer;
-            margin-left: 10px;
-        }
-        
-        .waiting-animation {
-            display: flex;
-            justify-content: center;
-            margin: 1rem 0;
-        }
-        
-        .waiting-dot {
-            width: 8px;
-            height: 8px;
-            background: var(--primary);
+        .loading-spinner {
+            display: inline-block;
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(255, 255, 255, 0.1);
             border-radius: 50%;
-            margin: 0 5px;
-            animation: pulse 1.5s infinite ease-in-out;
+            border-top-color: var(--primary);
+            animation: spin 1s ease-in-out infinite;
         }
         
-        .waiting-dot:nth-child(2) {
-            animation-delay: 0.3s;
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
         
-        .waiting-dot:nth-child(3) {
-            animation-delay: 0.6s;
+        .loading-text {
+            margin-top: 1rem;
         }
         
-        .security-badge {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            background: rgba(46, 204, 113, 0.1);
-            padding: 10px;
-            border-radius: 5px;
-            margin: 15px 0;
-            border: 1px solid rgba(46, 204, 113, 0.3);
-        }
-        
-        .security-badge svg {
-            color: var(--primary);
-        }
-
-        .privacy-settings {
-            display: flex;
+        .chat-container {
+            display: none;
+            flex: 1;
             flex-direction: column;
-            gap: 10px;
-            background: var(--card-bg);
-            padding: 15px;
-            border-radius: 5px;
-            margin: 15px 0;
+            height: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            width: 100%;
         }
         
-        .privacy-settings h4 {
-            margin-bottom: 10px;
-            color: var(--primary);
-        }
-        
-        .setting-toggle {
+        .chat-header {
+            background-color: var(--surface);
+            padding: 1rem;
+            border-radius: 8px 8px 0 0;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
         
-        .toggle-switch {
-            position: relative;
+        .chat-info {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .partner-name {
+            font-weight: bold;
+        }
+        
+        .connection-status {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+        
+        .status-indicator {
             display: inline-block;
-            width: 50px;
-            height: 24px;
-        }
-        
-        .toggle-switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        
-        .toggle-slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #555;
-            transition: .4s;
-            border-radius: 24px;
-        }
-        
-        .toggle-slider:before {
-            position: absolute;
-            content: "";
-            height: 16px;
-            width: 16px;
-            left: 4px;
-            bottom: 4px;
-            background-color: white;
-            transition: .4s;
+            width: 10px;
+            height: 10px;
+            background-color: var(--error);
             border-radius: 50%;
+            margin-right: 5px;
         }
         
-        input:checked + .toggle-slider {
+        .status-indicator.connected {
+            background-color: var(--success);
+        }
+        
+        .end-chat-btn {
+            background-color: var(--error);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .messages {
+            flex: 1;
+            background-color: rgba(255, 255, 255, 0.05);
+            padding: 1rem;
+            overflow-y: auto;
+            height: 50vh;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .message-container {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .message-container.sent {
+            align-items: flex-end;
+        }
+        
+        .message-container.received {
+            align-items: flex-start;
+        }
+        
+        .message-header {
+            font-size: 0.8rem;
+            margin-bottom: 2px;
+            color: var(--text-secondary);
+            padding: 0 0.5rem;
+        }
+        
+        .message {
+            max-width: 70%;
+            padding: 0.5rem 1rem;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+        
+        .message.received {
+            background-color: var(--surface);
+            border-bottom-left-radius: 4px;
+        }
+        
+        .message.sent {
             background-color: var(--primary);
+            color: var(--background);
+            border-bottom-right-radius: 4px;
         }
         
-        input:checked + .toggle-slider:before {
-            transform: translateX(26px);
-        }
-        
-        @keyframes pulse {
-            0%, 100% {
-                transform: scale(0.5);
-                opacity: 0.5;
-            }
-            50% {
-                transform: scale(1.2);
-                opacity: 1;
-            }
-        }
-        
-        footer {
+        .system-message {
             text-align: center;
-            padding: 2rem;
-            background: var(--dark);
-            color: #888;
-            margin-top: auto;
-            border-top: 1px solid var(--mid-gray);
+            color: var(--text-secondary);
+            margin: 0.5rem 0;
+            font-style: italic;
+            padding: 0.5rem;
+            background-color: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+        }
+        
+        .input-area {
+            background-color: var(--surface);
+            padding: 1rem;
+            border-radius: 0 0 8px 8px;
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .message-input {
+            flex: 1;
+            padding: 0.8rem;
+            border-radius: 4px;
+            border: none;
+            background-color: rgba(255, 255, 255, 0.1);
+            color: var(--text);
+            font-size: 1rem;
+        }
+        
+        .message-input:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(187, 134, 252, 0.3);
+        }
+        
+        .send-btn {
+            background-color: var(--secondary);
+            color: var(--background);
+            border: none;
+            border-radius: 4px;
+            padding: 0 1.5rem;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .send-btn:disabled {
+            background-color: rgba(3, 218, 198, 0.3);
+            cursor: not-allowed;
+        }
+        
+        .typing-indicator {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-style: italic;
+            margin-top: 0.5rem;
+            height: 1rem;
+        }
+        
+        .disclaimer {
+            margin-top: 2rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            text-align: center;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .notification {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            background-color: var(--surface);
+            color: var(--text);
+            padding: 1rem;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            display: none;
+            animation: slide-in 0.3s ease-out;
+        }
+        
+        @keyframes slide-in {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
         }
         
         @media (max-width: 768px) {
-            .option-card {
-                min-width: 100%;
+            .buttons {
+                flex-direction: column;
             }
             
-            .chat-options {
-                flex-direction: column;
+            main {
+                padding: 1rem;
+            }
+            
+            .message {
+                max-width: 85%;
+            }
+            
+            .user-info {
+                position: static;
+                justify-content: center;
+                margin-top: 1rem;
             }
         }
     </style>
 </head>
 <body>
+    <div id="notification" class="notification"></div>
+    
     <header>
-        <div class="logo">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="16 2 8 2 2 8 2 16 8 22 16 22 22 16 22 8" />
-                <path d="M12 8v8" />
-                <path d="M8 12h8" />
-            </svg>
-            Emerald
+        <h1>ORLEQTOR</h1>
+        <p class="tagline">100% Anonymous P2P Chat</p>
+        <div id="user-info" class="user-info">
+            <div id="user-avatar" class="user-avatar"></div>
+            <span id="username">Generating username...</span>
         </div>
     </header>
     
-    <main class="content">
-        <section class="intro">
-            <h2>True P2P Anonymous Chat</h2>
-            <p>Welcome to Emerald, where privacy meets conversation. Chat anonymously with strangers or connect with friends using direct peer-to-peer technology. No central servers, no data collection, just pure, private communication.</p>
+    <main>
+        <div class="welcome-screen">
+            <h2>Start a secure, anonymous conversation</h2>
+            <p>All messages are sent peer-to-peer with no server storage</p>
             
-            <div class="security-badge">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                </svg>
-                <span>Peer-to-peer encryption enabled</span>
+            <div class="buttons">
+                <button id="chat-stranger-btn" class="btn">Chat with Stranger</button>
+                <button id="chat-friend-btn" class="btn">Chat with Friend</button>
+                <button id="join-friend-btn" class="btn">Join with Code</button>
             </div>
             
-            <div class="status-indicator">
-                <div class="status-dot" id="statusDot"></div>
-                <span id="onlineCount">Initializing WebRTC...</span>
+            <div id="friend-code-container" class="friend-code-container">
+                <h3>Share this code with your friend</h3>
+                <div id="friend-code" class="code-display">Generating code...</div>
+                <p>Your friend can use this code to join your chat room</p>
+                <button id="copy-code-btn" class="btn btn-small">Copy Code</button>
+                <p id="waiting-message">Waiting for friend to connect...</p>
             </div>
-        </section>
+            
+            <div id="join-code-container" class="join-code-container">
+                <h3>Enter your friend's code</h3>
+                <input type="text" id="code-input" class="code-input" placeholder="Enter 16-character code" maxlength="16">
+                <button id="connect-btn" class="btn btn-small">Connect</button>
+            </div>
+            
+            <div id="loading-container" class="loading-container">
+                <div class="loading-spinner"></div>
+                <p id="loading-text" class="loading-text">Looking for a stranger to chat with...</p>
+            </div>
+            
+            <p class="disclaimer">
+                ORLEQTOR uses peer-to-peer technology to ensure your conversations remain private.
+                No messages are stored on any servers. Your randomly generated username changes
+                each time you reload the page for complete anonymity.
+            </p>
+        </div>
         
-        <section class="chat-options">
-            <div class="option-card">
-                <div class="option-icon">👥</div>
-                <h3>Chat with Strangers</h3>
-                <p>Connect directly with random users around the world. Your identity stays protected with randomly generated usernames and peer-to-peer encryption.</p>
-                <button class="btn btn-primary" id="strangerChatBtn">Start Random Chat</button>
-                
-                <div class="privacy-settings">
-                    <h4>Privacy Settings</h4>
-                    <div class="setting-toggle">
-                        <span>End-to-end encryption</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="encryptionToggle" checked>
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div class="setting-toggle">
-                        <span>Route through Tor (beta)</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="torToggle">
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
+        <div id="chat-container" class="chat-container">
+            <div class="chat-header">
+                <div class="chat-info">
+                    <span id="status-indicator" class="status-indicator"></span>
+                    <span id="partner-name" class="partner-name">Unknown</span>
+                    <span id="connection-status" class="connection-status">Connecting...</span>
                 </div>
+                <button id="end-chat-btn" class="end-chat-btn">End Chat</button>
             </div>
-            
-            <div class="option-card">
-                <div class="option-icon">🔒</div>
-                <h3>Direct P2P Chat</h3>
-                <p>Create a private connection and share a one-time code with friends for secure, anonymous conversations - no intermediary servers.</p>
-                <button class="btn btn-secondary" id="createRoomBtn">Create Private Room</button>
-                
-                <div class="join-room">
-                    <h3>Join Existing Room</h3>
-                    <div class="join-form">
-                        <input type="text" id="roomCodeInput" placeholder="Enter connection code">
-                        <button class="btn btn-outline" id="joinRoomBtn">Join</button>
-                    </div>
-                </div>
+            <div id="messages" class="messages"></div>
+            <div class="typing-indicator" id="typing-indicator"></div>
+            <div class="input-area">
+                <input type="text" id="message-input" class="message-input" placeholder="Type your message..." disabled>
+                <button id="send-btn" class="send-btn" disabled>Send</button>
             </div>
-        </section>
+        </div>
     </main>
     
-    <!-- Random Chat Modal -->
-    <div class="modal" id="randomChatModal">
-        <div class="modal-content">
-            <span class="close-modal" id="closeRandomChat">&times;</span>
-            <div class="chat-header">
-                <h3>P2P Random Chat</h3>
-                <div>Your username: <span class="username" id="randomUsername">AnonymousEmerald123</span></div>
-            </div>
-            <div class="chat-container" id="randomChatContainer">
-                <div class="chat-messages" id="randomChatMessages">
-                    <div class="message system-message">
-                        Looking for a chat partner...
-                    </div>
-                    <div class="waiting-animation" id="searchingAnimation">
-                        <div class="waiting-dot"></div>
-                        <div class="waiting-dot"></div>
-                        <div class="waiting-dot"></div>
-                    </div>
-                </div>
-                <div class="chat-input">
-                    <input type="text" id="randomChatInput" placeholder="Type your message..." disabled>
-                    <button class="btn btn-primary" id="randomSendBtn" disabled>Send</button>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Private Room Modal -->
-    <div class="modal" id="privateRoomModal">
-        <div class="modal-content">
-            <span class="close-modal" id="closePrivateRoom">&times;</span>
-            <h3>Private P2P Room Created</h3>
-            <p>Share this connection code with friends to let them join your direct chat:</p>
-            <div class="room-code" id="generatedRoomCode">
-                Generating...
-                <button class="copy-btn" id="copyRoomCode">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                    </svg>
-                </button>
-            </div>
-            <div class="security-badge">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                </svg>
-                <span>Direct P2P connection with AES-256 encryption</span>
-            </div>
-            <p>Waiting for others to join directly...</p>
-            <div class="chat-header">
-                <div>Your username: <span class="username" id="privateUsername">GlowingEmerald456</span></div>
-            </div>
-            <div class="chat-container" id="privateChatContainer">
-                <div class="chat-messages" id="privateChatMessages">
-                    <div class="message system-message">
-                        Connection ready! Share the code to start chatting.
-                    </div>
-                </div>
-                <div class="chat-input">
-                    <input type="text" id="privateChatInput" placeholder="Type your message...">
-                    <button class="btn btn-secondary" id="privateSendBtn">Send</button>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Join Room Modal -->
-    <div class="modal" id="joinRoomModal">
-        <div class="modal-content">
-            <span class="close-modal" id="closeJoinRoom">&times;</span>
-            <div class="chat-header">
-                <h3>Joined Private P2P Room</h3>
-                <div>Your username: <span class="username" id="joinUsername">ShiningEmerald789</span></div>
-            </div>
-            <div class="chat-container" id="joinChatContainer">
-                <div class="chat-messages" id="joinChatMessages">
-                    <div class="message system-message">
-                        Establishing direct connection...
-                    </div>
-                    <div class="waiting-animation" id="joiningAnimation">
-                        <div class="waiting-dot"></div>
-                        <div class="waiting-dot"></div>
-                        <div class="waiting-dot"></div>
-                    </div>
-                </div>
-                <div class="chat-input">
-                    <input type="text" id="joinChatInput" placeholder="Type your message..." disabled>
-                    <button class="btn btn-secondary" id="joinSendBtn" disabled>Send</button>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <footer>
-        <p>&copy; 2025 Emerald Chat. All rights reserved.</p>
-        <p>100% Anonymous. True P2P. No data stored.</p>
-    </footer>
-
     <script>
-        // WebRTC Configuration
-        const configuration = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' }, // Public STUN server - only used for initial connection
-                { urls: 'stun:stun1.l.google.com:19302' },
-            ]
-        };
+        // DOM Elements
+        const welcomeScreen = document.querySelector('.welcome-screen');
+        const chatContainer = document.getElementById('chat-container');
+        const chatStrangerBtn = document.getElementById('chat-stranger-btn');
+        const chatFriendBtn = document.getElementById('chat-friend-btn');
+        const joinFriendBtn = document.getElementById('join-friend-btn');
+        const friendCodeContainer = document.getElementById('friend-code-container');
+        const friendCode = document.getElementById('friend-code');
+        const copyCodeBtn = document.getElementById('copy-code-btn');
+        const joinCodeContainer = document.getElementById('join-code-container');
+        const codeInput = document.getElementById('code-input');
+        const connectBtn = document.getElementById('connect-btn');
+        const loadingContainer = document.getElementById('loading-container');
+        const loadingText = document.getElementById('loading-text');
+        const endChatBtn = document.getElementById('end-chat-btn');
+        const messagesContainer = document.getElementById('messages');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const statusIndicator = document.getElementById('status-indicator');
+        const connectionStatus = document.getElementById('connection-status');
+        const partnerName = document.getElementById('partner-name');
+        const waitingMessage = document.getElementById('waiting-message');
+        const usernameDisplay = document.getElementById('username');
+        const userAvatar = document.getElementById('user-avatar');
+        const notification = document.getElementById('notification');
+        const typingIndicator = document.getElementById('typing-indicator');
         
-        // We need a minimal signaling server for initial peer discovery
-        // This is the only server communication needed, after which everything is P2P
-        const signalingServerUrl = 'https://signaling.emerald-chat.example';
+        // Global variables
+        let peer = null;
+        let connection = null;
+        let myPeerId = null;
+        let myUsername = '';
+        let partnerUsername = '';
+        let waitingForStranger = false;
+        let typingTimeout = null;
+        let lastTypingSignal = 0;
+        let isTyping = false;
         
-        // Variables for managing chat state
-        let currentUsername = '';
-        let currentPartner = '';
-        let currentRoomId = '';
-        let isConnectedToStranger = false;
-        let isConnectedToPrivateRoom = false;
-        let isJoiningRoom = false;
-        let peerConnection = null;
-        let dataChannel = null;
-        
-        // Encryption keys
-        let encryptionKey = null;
-        let ivCounter = 0;
-        
-        // Elements
-        const statusDot = document.getElementById('statusDot');
-        const onlineCount = document.getElementById('onlineCount');
-        const strangerChatBtn = document.getElementById('strangerChatBtn');
-        const createRoomBtn = document.getElementById('createRoomBtn');
-        const joinRoomBtn = document.getElementById('joinRoomBtn');
-        const randomChatModal = document.getElementById('randomChatModal');
-        const privateRoomModal = document.getElementById('privateRoomModal');
-        const joinRoomModal = document.getElementById('joinRoomModal');
-        const closeRandomChat = document.getElementById('closeRandomChat');
-        const closePrivateRoom = document.getElementById('closePrivateRoom');
-        const closeJoinRoom = document.getElementById('closeJoinRoom');
-        const randomUsername = document.getElementById('randomUsername');
-        const privateUsername = document.getElementById('privateUsername');
-        const joinUsername = document.getElementById('joinUsername');
-        const generatedRoomCode = document.getElementById('generatedRoomCode');
-        const copyRoomCode = document.getElementById('copyRoomCode');
-        const randomChatMessages = document.getElementById('randomChatMessages');
-        const privateChatMessages = document.getElementById('privateChatMessages');
-        const joinChatMessages = document.getElementById('joinChatMessages');
-        const randomChatInput = document.getElementById('randomChatInput');
-        const privateChatInput = document.getElementById('privateChatInput');
-        const joinChatInput = document.getElementById('joinChatInput');
-        const randomSendBtn = document.getElementById('randomSendBtn');
-        const privateSendBtn = document.getElementById('privateSendBtn');
-        const joinSendBtn = document.getElementById('joinSendBtn');
-        const searchingAnimation = document.getElementById('searchingAnimation');
-        const joiningAnimation = document.getElementById('joiningAnimation');
-        const encryptionToggle = document.getElementById('encryptionToggle');
-        const torToggle = document.getElementById('torToggle');
-        
-        // === WebRTC Implementation ===
-        
-        // Connect to the minimal signaling server
-        let signalingSocket = null;
-        
-        function connectToSignalingServer() {
-            try {
-                // Use a minimal WebSocket connection to the signaling server
-                signalingSocket = new WebSocket(signalingServerUrl);
-                
-                signalingSocket.onopen = function() {
-                    console.log('Connected to signaling server');
-                    statusDot.classList.add('online');
-                    onlineCount.textContent = 'P2P system ready';
-                    
-                    // Generate random username on connection
-                    const randomName = generateUsername();
-                    currentUsername = randomName;
-                    randomUsername.textContent = randomName;
-                    privateUsername.textContent = randomName;
-                    joinUsername.textContent = randomName;
-                    
-                    // Let the signaling server know we're here
-                    signalingSocket.send(JSON.stringify({
-                        type: 'register',
-                        username: currentUsername
-                    }));
-                };
-                
-                signalingSocket.onmessage = handleSignalingMessage;
-                
-                signalingSocket.onclose = function() {
-                    console.log('Disconnected from signaling server');
-                    statusDot.classList.remove('online');
-                    onlineCount.textContent = 'Signaling server disconnected. Attempting to reconnect...';
-                    
-                    // Try to reconnect after a delay
-                    setTimeout(connectToSignalingServer, 5000);
-                };
-                
-                signalingSocket.onerror = function(error) {
-                    console.error('Signaling server error:', error);
-                    onlineCount.textContent = 'Error connecting to signaling server';
-                };
-            } catch (err) {
-                console.error('Failed to connect to signaling server:', err);
-                onlineCount.textContent = 'Failed to connect to signaling server';
-                
-                // Try to reconnect after a delay
-                setTimeout(connectToSignalingServer, 5000);
-            }
-        }
-        
-        function handleSignalingMessage(event) {
-            const data = JSON.parse(event.data);
+        // Generate a random username
+        function generateUsername() {
+            const adjectives = ["Swift", "Crimson", "Azure", "Golden", "Silver", "Cosmic", "Mystic", "Phantom", "Shadow", "Neon", "Cyber", "Quantum", "Echo", "Nova", "Alpha", "Omega", "Frost", "Phoenix", "Vortex", "Digital", "Crystal", "Onyx", "Sapphire", "Emerald", "Ruby", "Obsidian", "Jade", "Amber", "Coral", "Aqua"];
+            const nouns = ["Raven", "Wolf", "Fox", "Hawk", "Eagle", "Tiger", "Dragon", "Lion", "Panther", "Falcon", "Serpent", "Knight", "Ranger", "Hunter", "Ghost", "Specter", "Wraith", "Voyager", "Crusader", "Guardian", "Sentinel", "Nomad", "Wanderer", "Warden", "Pioneer", "Ninja", "Samurai", "Ronin", "Titan", "Oracle"];
             
-            switch(data.type) {
-                case 'online_count':
-                    onlineCount.textContent = `${data.count} user${data.count !== 1 ? 's' : ''} available for P2P chat`;
-                    break;
-                    
-                case 'offer':
-                    handleOffer(data);
-                    break;
-                    
-                case 'answer':
-                    handleAnswer(data);
-                    break;
-                    
-                case 'ice_candidate':
-                    handleIceCandidate(data);
-                    break;
-                    
-                case 'match_found':
-                    searchingAnimation.style.display = 'none';
-                    addMessage(randomChatMessages, `Found a potential peer! Establishing secure connection...`);
-                    createPeerConnection('random', data.peerId);
-                    break;
-                    
-                case 'no_peers_available':
-                    searchingAnimation.style.display = 'none';
-                    addMessage(randomChatMessages, 'No users available for chat right now. Please try again later.');
-                    
-                    // Show retry button
-                    const retryBtn = document.createElement('button');
-                    retryBtn.className = 'btn btn-primary';
-                    retryBtn.textContent = 'Try Again';
-                    retryBtn.style.margin = '10px auto';
-                    retryBtn.style.display = 'block';
-                    
-                    retryBtn.addEventListener('click', () => {
-                        // Remove all previous messages
-                        while (randomChatMessages.firstChild) {
-                            randomChatMessages.removeChild(randomChatMessages.firstChild);
-                        }
-                        
-                        // Show searching message and animation
-                        addMessage(randomChatMessages, 'Looking for a chat partner...');
-                        searchingAnimation.style.display = 'flex';
-                        randomChatMessages.appendChild(searchingAnimation);
-                        
-                        // Start new search
-                        signalingSocket.send(JSON.stringify({
-                            type: 'find_peer',
-                            username: currentUsername
-                        }));
-                        
-                        // Remove retry button
-                        retryBtn.remove();
-                    });
-                    
-                    randomChatMessages.appendChild(retryBtn);
-                    break;
-                    
-                case 'room_created':
-                    currentRoomId = data.roomId;
-                    generatedRoomCode.textContent = data.connectionCode;
-                    isConnectedToPrivateRoom = true;
-                    
-                    // Set up the peer connection as the host
-                    createPeerConnection('host', data.roomId);
-                    break;
-                    
-                case 'peer_joined_room':
-                    // Someone is joining our room - send them an offer
-                    currentPartner = data.username;
-                    addMessage(privateChatMessages, `${currentPartner} is connecting... Establishing secure P2P channel.`);
-                    createOffer();
-                    break;
-                    
-                case 'join_success':
-                    currentRoomId = data.roomId;
-                    currentPartner = data.hostUsername;
-                    isJoiningRoom = true;
-                    
-                    // Set up the peer connection as the joiner
-                    createPeerConnection('join', data.roomId);
-                    break;
-                    
-                case 'room_not_found':
-                    joiningAnimation.style.display = 'none';
-                    addMessage(joinChatMessages, 'Room not found. Please check the code and try again.');
-                    
-                    // Continuing from where the code was cut off...
-
-                    // Show back button
-                    const backBtn = document.createElement('button');
-                    backBtn.className = 'btn btn-outline';
-                    backBtn.textContent = 'Back';
-                    backBtn.style.margin = '10px auto';
-                    backBtn.style.display = 'block';
-                    
-                    backBtn.addEventListener('click', () => {
-                        joinRoomModal.style.display = 'none';
-                        document.getElementById('roomCodeInput').value = '';
-                    });
-                    
-                    joinChatMessages.appendChild(backBtn);
-                    break;
-                    
-                case 'error':
-                    console.error('Server error:', data.message);
-                    addMessage(isJoiningRoom ? joinChatMessages : randomChatMessages, 
-                        `Error: ${data.message}`);
-                    break;
-            }
+            const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+            const noun = nouns[Math.floor(Math.random() * nouns.length)];
+            const number = Math.floor(Math.random() * 1000);
+            
+            return `${adjective}${noun}${number}`;
         }
         
-        // Create WebRTC peer connection
-        function createPeerConnection(type, peerId) {
-            try {
-                // Create RTCPeerConnection
-                peerConnection = new RTCPeerConnection(configuration);
-                
-                // Setup ice handling
-                peerConnection.onicecandidate = (event) => {
-                    if (event.candidate) {
-                        // Send ICE candidate to peer via signaling server
-                        signalingSocket.send(JSON.stringify({
-                            type: 'ice_candidate',
-                            candidate: event.candidate,
-                            recipientId: peerId,
-                            senderId: currentUsername,
-                            roomId: type === 'random' ? null : currentRoomId
-                        }));
-                    }
-                };
-                
-                peerConnection.oniceconnectionstatechange = () => {
-                    console.log('ICE connection state:', peerConnection.iceConnectionState);
-                    
-                    if (peerConnection.iceConnectionState === 'disconnected' || 
-                        peerConnection.iceConnectionState === 'failed' || 
-                        peerConnection.iceConnectionState === 'closed') {
-                        
-                        handleDisconnect(type);
-                    }
-                };
-                
-                // Create data channel for sending messages
-                if (type === 'random' || type === 'host') {
-                    // We're initiating, so create the data channel
-                    dataChannel = peerConnection.createDataChannel('chat');
-                    setupDataChannel(dataChannel, type);
-                    
-                    // If we're the host or initiator, create an offer
-                    if (type === 'host' && isConnectedToPrivateRoom) {
-                        // We'll create the offer when a peer joins
-                    } else if (type === 'random') {
-                        createOffer();
-                    }
-                } else {
-                    // We're joining, so wait for the data channel
-                    peerConnection.ondatachannel = (event) => {
-                        dataChannel = event.channel;
-                        setupDataChannel(dataChannel, type);
-                    };
+        // Generate avatar initial and color
+        function generateAvatar(username) {
+            userAvatar.textContent = username.charAt(0);
+            
+            // Generate a deterministic color based on username
+            const hash = CryptoJS.MD5(username).toString();
+            const hue = parseInt(hash.substring(0, 6), 16) % 360;
+            userAvatar.style.backgroundColor = `hsl(${hue}, 70%, 60%)`;
+        }
+        
+        // Initialize PeerJS
+        function initializePeer() {
+            // Create a random ID to ensure anonymity
+            const randomId = generateRandomId(32);
+            
+            // Generate a random username
+            myUsername = generateUsername();
+            usernameDisplay.textContent = myUsername;
+            generateAvatar(myUsername);
+            
+            // Create peer connection
+            peer = new Peer(randomId, {
+                debug: 2,
+                config: {
+                    'iceServers': [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
                 }
-                
-            } catch (err) {
-                console.error('Error creating WebRTC peer connection:', err);
-                addMessage(
-                    type === 'random' ? randomChatMessages : 
-                    type === 'host' ? privateChatMessages : 
-                    joinChatMessages, 
-                    'Failed to create P2P connection. Please try again.'
-                );
-            }
-        }
-        
-        // Setup the data channel event handlers
-        function setupDataChannel(channel, type) {
-            channel.onopen = () => {
-                console.log('Data channel is open');
-                
-                // Generate and exchange encryption key if encryption is enabled
-                if (encryptionToggle.checked) {
-                    generateEncryptionKey().then(key => {
-                        encryptionKey = key;
-                        
-                        // Send a system message to the UI
-                        const messageContainer = 
-                            type === 'random' ? randomChatMessages : 
-                            type === 'host' ? privateChatMessages : 
-                            joinChatMessages;
-                            
-                        const inputField = 
-                            type === 'random' ? randomChatInput : 
-                            type === 'host' ? privateChatInput : 
-                            joinChatInput;
-                            
-                        const sendButton = 
-                            type === 'random' ? randomSendBtn : 
-                            type === 'host' ? privateSendBtn : 
-                            joinSendBtn;
-                            
-                        addMessage(messageContainer, 'Secure P2P connection established! You can chat privately now.');
-                        
-                        // Enable chat input and send button
-                        inputField.disabled = false;
-                        sendButton.disabled = false;
-                        
-                        // Hide loading animations
-                        if (type === 'random') {
-                            searchingAnimation.style.display = 'none';
-                            isConnectedToStranger = true;
-                        } else if (type === 'join') {
-                            joiningAnimation.style.display = 'none';
-                            isJoiningRoom = false;
-                            isConnectedToPrivateRoom = true;
-                        }
-                        
-                        // Focus on input field
-                        inputField.focus();
-                    });
-                } else {
-                    // No encryption, just enable chat
-                    const messageContainer = 
-                        type === 'random' ? randomChatMessages : 
-                        type === 'host' ? privateChatMessages : 
-                        joinChatMessages;
-                        
-                    const inputField = 
-                        type === 'random' ? randomChatInput : 
-                        type === 'host' ? privateChatInput : 
-                        joinChatInput;
-                        
-                    const sendButton = 
-                        type === 'random' ? randomSendBtn : 
-                        type === 'host' ? privateSendBtn : 
-                        joinSendBtn;
-                        
-                    addMessage(messageContainer, 'P2P connection established! You can chat now.');
-                    
-                    // Enable chat input and send button
-                    inputField.disabled = false;
-                    sendButton.disabled = false;
-                    
-                    // Hide loading animations
-                    if (type === 'random') {
-                        searchingAnimation.style.display = 'none';
-                        isConnectedToStranger = true;
-                    } else if (type === 'join') {
-                        joiningAnimation.style.display = 'none';
-                        isJoiningRoom = false;
-                        isConnectedToPrivateRoom = true;
-                    }
-                    
-                    // Focus on input field
-                    inputField.focus();
-                }
-            };
-            
-            channel.onclose = () => {
-                console.log('Data channel is closed');
-                handleDisconnect(type);
-            };
-            
-            channel.onerror = (error) => {
-                console.error('Data channel error:', error);
-                addMessage(
-                    type === 'random' ? randomChatMessages : 
-                    type === 'host' ? privateChatMessages : 
-                    joinChatMessages, 
-                    'Error in data channel connection.'
-                );
-            };
-            
-            channel.onmessage = (event) => {
-                console.log('Message received:', event.data);
-                
-                try {
-                    // Decrypt if encryption is enabled
-                    let messageData;
-                    
-                    if (encryptionToggle.checked) {
-                        const decrypted = JSON.parse(event.data);
-                        messageData = {
-                            type: decrypted.type,
-                            text: decrypted.text ? decryptMessage(decrypted.text, encryptionKey, decrypted.iv) : null,
-                            username: decrypted.username
-                        };
-                    } else {
-                        messageData = JSON.parse(event.data);
-                    }
-                    
-                    const messageContainer = 
-                        type === 'random' ? randomChatMessages : 
-                        type === 'host' ? privateChatMessages : 
-                        joinChatMessages;
-                        
-                    if (messageData.type === 'message') {
-                        addMessage(
-                            messageContainer, 
-                            messageData.text, 
-                            'received', 
-                            messageData.username
-                        );
-                    } else if (messageData.type === 'system') {
-                        addMessage(messageContainer, messageData.text);
-                    }
-                } catch (err) {
-                    console.error('Error processing message:', err);
-                }
-            };
-        }
-        
-        // Create an offer (initiator side)
-        function createOffer() {
-            if (!peerConnection) return;
-            
-            peerConnection.createOffer()
-                .then(offer => peerConnection.setLocalDescription(offer))
-                .then(() => {
-                    // Send the offer to the other peer via signaling server
-                    signalingSocket.send(JSON.stringify({
-                        type: 'offer',
-                        offer: peerConnection.localDescription,
-                        senderId: currentUsername,
-                        recipientId: currentPartner || null,
-                        roomId: isConnectedToPrivateRoom ? currentRoomId : null
-                    }));
-                })
-                .catch(err => {
-                    console.error('Error creating offer:', err);
-                    addMessage(
-                        isConnectedToPrivateRoom ? privateChatMessages : randomChatMessages,
-                        'Failed to create connection offer. Please try again.'
-                    );
-                });
-        }
-        
-        // Handle received offer (receiver side)
-        function handleOffer(data) {
-            if (!peerConnection) {
-                // Not expecting an offer, so create peer connection
-                if (isJoiningRoom) {
-                    createPeerConnection('join', currentRoomId);
-                } else {
-                    createPeerConnection('random', data.senderId);
-                }
-            }
-            
-            currentPartner = data.senderId;
-            
-            // Set remote description from the offer
-            peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
-                .then(() => peerConnection.createAnswer())
-                .then(answer => peerConnection.setLocalDescription(answer))
-                .then(() => {
-                    // Send the answer back via signaling server
-                    signalingSocket.send(JSON.stringify({
-                        type: 'answer',
-                        answer: peerConnection.localDescription,
-                        senderId: currentUsername,
-                        recipientId: data.senderId,
-                        roomId: isJoiningRoom ? currentRoomId : null
-                    }));
-                })
-                .catch(err => {
-                    console.error('Error handling offer:', err);
-                    addMessage(
-                        isJoiningRoom ? joinChatMessages : randomChatMessages,
-                        'Failed to handle connection offer. Please try again.'
-                    );
-                });
-        }
-        
-        // Handle received answer (initiator side)
-        function handleAnswer(data) {
-            if (!peerConnection) return;
-            
-            peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
-                .catch(err => {
-                    console.error('Error handling answer:', err);
-                    addMessage(
-                        isConnectedToPrivateRoom ? privateChatMessages : randomChatMessages,
-                        'Failed to establish connection. Please try again.'
-                    );
-                });
-        }
-        
-        // Handle ICE candidate
-        function handleIceCandidate(data) {
-            if (!peerConnection) return;
-            
-            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
-                .catch(err => {
-                    console.error('Error adding ICE candidate:', err);
-                });
-        }
-        
-        // Handle disconnection
-        function handleDisconnect(type) {
-            const messageContainer = 
-                type === 'random' ? randomChatMessages : 
-                type === 'host' ? privateChatMessages : 
-                joinChatMessages;
-                
-            const inputField = 
-                type === 'random' ? randomChatInput : 
-                type === 'host' ? privateChatInput : 
-                joinChatInput;
-                
-            const sendButton = 
-                type === 'random' ? randomSendBtn : 
-                type === 'host' ? privateSendBtn : 
-                joinSendBtn;
-            
-            addMessage(messageContainer, 'Peer disconnected.');
-            
-            // Disable chat input and send button
-            inputField.disabled = true;
-            sendButton.disabled = true;
-            
-            // Reset connection state
-            if (type === 'random') {
-                isConnectedToStranger = false;
-            } else {
-                isConnectedToPrivateRoom = false;
-                isJoiningRoom = false;
-            }
-            
-            // Clean up WebRTC
-            if (dataChannel) {
-                dataChannel.close();
-                dataChannel = null;
-            }
-            
-            if (peerConnection) {
-                peerConnection.close();
-                peerConnection = null;
-            }
-            
-            // Add restart button
-            const restartBtn = document.createElement('button');
-            restartBtn.className = 'btn btn-primary';
-            restartBtn.textContent = type === 'random' ? 'Find New Partner' : 'Reconnect';
-            restartBtn.style.margin = '10px auto';
-            restartBtn.style.display = 'block';
-            
-            restartBtn.addEventListener('click', () => {
-                if (type === 'random') {
-                    // Clear messages
-                    while (randomChatMessages.firstChild) {
-                        randomChatMessages.removeChild(randomChatMessages.firstChild);
-                    }
-                    
-                    // Show searching message and animation
-                    addMessage(randomChatMessages, 'Looking for a chat partner...');
-                    searchingAnimation.style.display = 'flex';
-                    randomChatMessages.appendChild(searchingAnimation);
-                    
-                    // Start search
-                    signalingSocket.send(JSON.stringify({
-                        type: 'find_peer',
-                        username: currentUsername
-                    }));
-                } else {
-                    // Close the current modal
-                    if (type === 'host') {
-                        privateRoomModal.style.display = 'none';
-                    } else {
-                        joinRoomModal.style.display = 'none';
-                    }
-                }
-                
-                // Remove restart button
-                restartBtn.remove();
             });
             
-            messageContainer.appendChild(restartBtn);
+            peer.on('open', (id) => {
+                myPeerId = id;
+                console.log('My peer ID is: ' + id);
+            });
+            
+            peer.on('connection', (conn) => {
+                if (connection) {
+                    // Already connected, reject new connection
+                    conn.close();
+                    return;
+                }
+                
+                connection = conn;
+                setupConnectionListeners();
+                
+                // If we're waiting for a stranger, we're now connected
+                if (waitingForStranger) {
+                    waitingForStranger = false;
+                    hideElement(loadingContainer);
+                }
+                
+                showChatInterface();
+            });
+            
+            peer.on('error', (err) => {
+                console.error('PeerJS error:', err);
+                showNotification('Connection error: ' + err.message);
+                resetChat();
+            });
         }
         
-        // Send message via WebRTC data channel
-        function sendMessage(type) {
-            let inputField, messageContainer;
+        // Generate a random ID with specified length
+        function generateRandomId(length) {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            let result = '';
+            for (let i = 0; i < length; i++) {
+                result += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return result;
+        }
+        
+        // Generate a 16-character code for friend chat
+        function generateFriendCode() {
+            return generateRandomId(16);
+        }
+        
+        // Setup connection listeners
+        function setupConnectionListeners() {
+            connection.on('open', () => {
+                // Send my username to partner
+                sendMetadata({ type: 'username', username: myUsername });
+                
+                connectionStatus.textContent = 'Connected';
+                statusIndicator.classList.add('connected');
+                messageInput.disabled = false;
+                sendBtn.disabled = false;
+                messageInput.focus();
+                
+                // Hide waiting message if this was a friend code connection
+                hideElement(waitingMessage);
+            });
             
-            if (type === 'random') {
-                inputField = randomChatInput;
-                messageContainer = randomChatMessages;
-            } else if (type === 'private') {
-                inputField = privateChatInput;
-                messageContainer = privateChatMessages;
-            } else {
-                inputField = joinChatInput;
-                messageContainer = joinChatMessages;
+            connection.on('data', (data) => {
+                if (typeof data === 'object' && data !== null) {
+                    handleMetadata(data);
+                } else {
+                    addMessage(data, 'received');
+                }
+            });
+            
+            connection.on('close', () => {
+                addSystemMessage('Your chat partner has disconnected.');
+                resetChatInterface();
+            });
+            
+            connection.on('error', (err) => {
+                console.error('Connection error:', err);
+                addSystemMessage('Connection error. Please try again.');
+                resetChat();
+            });
+        }
+        
+        // Handle metadata messages
+        function handleMetadata(data) {
+            switch (data.type) {
+                case 'username':
+                    partnerUsername = data.username;
+                    partnerName.textContent = partnerUsername;
+                    addSystemMessage(`You are now chatting with ${partnerUsername}`);
+                    break;
+                case 'typing':
+                    if (data.isTyping) {
+                        typingIndicator.textContent = `${partnerUsername} is typing...`;
+                    } else {
+                        typingIndicator.textContent = '';
+                    }
+                    break;
+            }
+        }
+        
+        // Send metadata messages
+        function sendMetadata(data) {
+            if (connection && connection.open) {
+                connection.send(data);
+            }
+        }
+        
+        // Add a message to the chat
+        function addMessage(text, type) {
+            const container = document.createElement('div');
+            container.classList.add('message-container', type);
+            
+            const header = document.createElement('div');
+            header.classList.add('message-header');
+            header.textContent = type === 'sent' ? myUsername : partnerUsername;
+            
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', type);
+            messageElement.textContent = text;
+            
+            container.appendChild(header);
+            container.appendChild(messageElement);
+            messagesContainer.appendChild(container);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        // Add a system message
+        function addSystemMessage(text) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('system-message');
+            messageElement.textContent = text;
+            messagesContainer.appendChild(messageElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        // Show notification
+        function showNotification(message) {
+            notification.textContent = message;
+            notification.style.display = 'block';
+            
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 3000);
+        }
+        
+        // Show/hide elements
+        function showElement(element) {
+            element.style.display = element.tagName === 'DIV' ? 'flex' : 'block';
+        }
+        
+        function hideElement(element) {
+            element.style.display = 'none';
+        }
+        
+        // Show the chat interface
+        function showChatInterface() {
+            hideElement(welcomeScreen);
+            showElement(chatContainer);
+        }
+        
+        // Reset the chat interface
+        function resetChatInterface() {
+            connectionStatus.textContent = 'Disconnected';
+            statusIndicator.classList.remove('connected');
+            messageInput.disabled = true;
+            sendBtn.disabled = true;
+            typingIndicator.textContent = '';
+        }
+        
+        // Reset the entire chat and return to welcome screen
+        function resetChat() {
+            if (connection) {
+                connection.close();
+                connection = null;
             }
             
-            const message = inputField.value.trim();
-            if (!message || !dataChannel) return;
+            waitingForStranger = false;
+            partnerUsername = '';
+            partnerName.textContent = 'Unknown';
             
-            // Clear input field
-            inputField.value = '';
+            // Clear messages
+            messagesContainer.innerHTML = '';
             
-            try {
-                // Add message to our UI
-                addMessage(messageContainer, message, 'sent');
+            // Reset UI
+            hideElement(chatContainer);
+            showElement(welcomeScreen);
+            hideElement(friendCodeContainer);
+            hideElement(joinCodeContainer);
+            hideElement(loadingContainer);
+            resetChatInterface();
+        }
+        
+        // Handle typing indicator
+        function handleTyping() {
+            if (!isTyping) {
+                isTyping = true;
+                sendMetadata({ type: 'typing', isTyping: true });
+            }
+            
+            clearTimeout(typingTimeout);
+            
+            typingTimeout = setTimeout(() => {
+                isTyping = false;
+                sendMetadata({ type: 'typing', isTyping: false });
+            }, 1000);
+        }
+        
+        // Simple signaling server simulation for stranger chat
+        // In a real application, this would be a proper signaling server
+        let waitingPeers = [];
+        
+        function findStrangerChat() {
+            loadingText.textContent = 'Looking for a stranger to chat with...';
+            showElement(loadingContainer);
+            
+            // Simulate finding a peer
+            // In a real app, this would involve communicating with a server
+            setTimeout(() => {
+                if (waitingForStranger) {
+                    // Simulate finding a peer after a random delay
+                    const randomPeerId = generateRandomId(32);
+                    simulateStrangerConnection(randomPeerId);
+                }
+            }, 2000 + Math.random() * 3000);
+        }
+        
+        function simulateStrangerConnection(peerId) {
+            if (!waitingForStranger) return;
+            
+            loadingText.textContent = 'Found someone! Connecting...';
+            
+            // Simulate connection
+            setTimeout(() => {
+                if (!waitingForStranger) return;
                 
-                // Prepare message data
-                let messageData = {
-                    type: 'message',
-                    text: message,
-                    username: currentUsername
+                // Create simulated connection
+                connection = {
+                    open: true,
+                    send: (data) => {
+                        setTimeout(() => {
+                            // Echo back for demonstration
+                            if (typeof data === 'object' && data !== null) {
+                                if (data.type === 'username') {
+                                    // Simulate receiving partner's username
+                                    partnerUsername = generateUsername();
+                                    partnerName.textContent = partnerUsername;
+                                    addSystemMessage(`You are now chatting with ${partnerUsername}`);
+                                } else if (data.type === 'typing') {
+                                    // Simulate typing indicator
+                                    if (data.isTyping && Math.random() > 0.7) {
+                                        typingIndicator.textContent = `${partnerUsername} is typing...`;
+                                        setTimeout(() => {
+                                            typingIndicator.textContent = '';
+                                        }, 2000);
+                                    }
+                                }
+                            } else {
+                                // Simulate response after a delay
+                                if (Math.random() > 0.3) {
+                                    setTimeout(() => {
+                                        addMessage(`This is a simulated response to: "${data}"`, 'received');
+                                    }, 1000 + Math.random() * 3000);
+                                }
+                            }
+                        }, 100);
+                    },
+                    close: () => {
+                        console.log('Connection closed');
+                    },
+                    on: (event, callback) => {
+                        if (event === 'open') {
+                            callback();
+                        }
+                    }
                 };
                 
-                // Encrypt if enabled
-                if (encryptionToggle.checked) {
-                    const iv = generateIV();
-                    messageData = {
-                        type: 'message',
-                        text: encryptMessage(message, encryptionKey, iv),
-                        username: currentUsername,
-                        iv: iv
-                    };
-                }
+                waitingForStranger = false;
+                hideElement(loadingContainer);
+                showChatInterface();
                 
-                // Send over data channel
-                dataChannel.send(JSON.stringify(messageData));
-            } catch (err) {
-                console.error('Error sending message:', err);
-                addMessage(messageContainer, 'Failed to send message.', 'system');
-            }
-        }
-        
-        // === UI Functions ===
-        
-        // Add message to chat container
-        function addMessage(container, text, type = 'system', sender = null) {
-            const messageElement = document.createElement('div');
-            messageElement.className = `message ${type}`;
-            
-            if (type === 'system') {
-                messageElement.textContent = text;
-            } else {
-                if (sender && type === 'received') {
-                    const senderSpan = document.createElement('div');
-                    senderSpan.className = 'message-sender';
-                    senderSpan.textContent = sender;
-                    senderSpan.style.fontWeight = 'bold';
-                    senderSpan.style.fontSize = '0.8rem';
-                    senderSpan.style.marginBottom = '3px';
-                    messageElement.appendChild(senderSpan);
-                }
+                // Send my username
+                sendMetadata({ type: 'username', username: myUsername });
                 
-                const messageContent = document.createElement('div');
-                messageContent.textContent = text;
-                messageElement.appendChild(messageContent);
-            }
-            
-            container.appendChild(messageElement);
-            container.scrollTop = container.scrollHeight;
+                connectionStatus.textContent = 'Connected';
+                statusIndicator.classList.add('connected');
+                messageInput.disabled = false;
+                sendBtn.disabled = false;
+                messageInput.focus();
+            }, 1500);
         }
         
-        // Generate random username
-        function generateUsername() {
-            const adjectives = ['Swift', 'Bright', 'Cool', 'Clever', 'Fast', 'Kind', 'Calm', 'Bold', 'Smart', 'Quick'];
-            const nouns = ['Eagle', 'Wave', 'Star', 'Moon', 'Sun', 'Wind', 'Wolf', 'Fox', 'Bear', 'Lion'];
-            const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
-            const noun = nouns[Math.floor(Math.random() * nouns.length)];
-            const num = Math.floor(Math.random() * 1000);
-            
-            return `${adj}${noun}${num}`;
-        }
-        
-        // Generate Connection Code
-        function generateConnectionCode() {
-            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-            let code = '';
-            
-            for (let i = 0; i < 6; i++) {
-                if (i === 3) code += '-';
-                code += chars.charAt(Math.floor(Math.random() * chars.length));
-            }
-            
-            return code;
-        }
-        
-        // === Cryptography Functions ===
-        
-        // Generate encryption key
-        async function generateEncryptionKey() {
-            return await crypto.subtle.generateKey(
-                {
-                    name: "AES-GCM",
-                    length: 256
-                },
-                true,
-                ["encrypt", "decrypt"]
-            );
-        }
-        
-        // Generate initialization vector
-        function generateIV() {
-            // Use a counter-based IV for better performance
-            ivCounter++;
-            const buffer = new ArrayBuffer(12);
-            const view = new DataView(buffer);
-            
-            // Put the counter value in the last 4 bytes
-            view.setUint32(8, ivCounter, false);
-            
-            return Array.from(new Uint8Array(buffer));
-        }
-        
-        // Encrypt message
-        async function encryptMessage(message, key, iv) {
-            const encoder = new TextEncoder();
-            const data = encoder.encode(message);
-            
-            try {
-                const ivBuffer = new Uint8Array(iv);
-                
-                const encrypted = await crypto.subtle.encrypt(
-                    {
-                        name: "AES-GCM",
-                        iv: ivBuffer
+        // Simulate friend code connection
+        function simulateFriendConnection(code) {
+            // In a real app, this would connect to a specific peer using the code
+            setTimeout(() => {
+                // Create simulated connection
+                connection = {
+                    open: true,
+                    send: (data) => {
+                        setTimeout(() => {
+                            // Echo back for demonstration
+                            if (typeof data === 'object' && data !== null) {
+                                if (data.type === 'username') {
+                                    // Simulate receiving partner's username
+                                    partnerUsername = generateUsername();
+                                    partnerName.textContent = partnerUsername;
+                                    addSystemMessage(`You are now chatting with ${partnerUsername}`);
+                                } else if (data.type === 'typing') {
+                                    // Simulate typing indicator
+                                    if (data.isTyping && Math.random() > 0.7) {
+                                        typingIndicator.textContent = `${partnerUsername} is typing...`;
+                                        setTimeout(() => {
+                                            typingIndicator.textContent = '';
+                                        }, 2000);
+                                    }
+                                }
+                            } else {
+                                // Simulate response after a delay
+                                if (Math.random() > 0.3) {
+                                    setTimeout(() => {
+                                        addMessage(`This is a simulated response using code: ${code}`, 'received');
+                                    }, 1000 + Math.random() * 3000);
+                                }
+                            }
+                        }, 100);
                     },
-                    key,
-                    data
-                );
-                
-                // Convert to base64 for easier transmission
-                return btoa(Array.from(new Uint8Array(encrypted), b => String.fromCharCode(b)).join(''));
-            } catch (err) {
-                console.error('Encryption error:', err);
-                throw err;
-            }
-        }
-        
-        // Decrypt message
-        async function decryptMessage(encryptedBase64, key, iv) {
-            try {
-                // Convert from base64
-                const encryptedStr = atob(encryptedBase64);
-                const encrypted = new Uint8Array(encryptedStr.split('').map(c => c.charCodeAt(0)));
-                
-                const ivBuffer = new Uint8Array(iv);
-                
-                const decrypted = await crypto.subtle.decrypt(
-                    {
-                        name: "AES-GCM",
-                        iv: ivBuffer
+                    close: () => {
+                        console.log('Connection closed');
                     },
-                    key,
-                    encrypted
-                );
+                    on: (event, callback) => {
+                        if (event === 'open') {
+                            callback();
+                        }
+                    }
+                };
                 
-                // Convert to string
-                const decoder = new TextDecoder();
-                return decoder.decode(decrypted);
-            } catch (err) {
-                console.error('Decryption error:', err);
-                return '(Message decryption failed)';
+                showChatInterface();
+                
+                // Send my username
+                sendMetadata({ type: 'username', username: myUsername });
+                connectionStatus.textContent = 'Connected';
+                statusIndicator.classList.add('connected');
+                messageInput.disabled = false;
+                sendBtn.disabled = false;
+                messageInput.focus();
+            }, 1500);
+        }
+        
+        // Wait for a connection with the given code
+        function waitForConnection(code) {
+            waitingMessage.textContent = `Waiting for someone to connect with code: ${code}`;
+            showElement(waitingMessage);
+            
+            // Simulate incoming connection after random delay
+            setTimeout(() => {
+                // Create simulated connection
+                connection = {
+                    open: true,
+                    send: (data) => {
+                        setTimeout(() => {
+                            // Echo back for demonstration
+                            if (typeof data === 'object' && data !== null) {
+                                if (data.type === 'username') {
+                                    // Simulate receiving partner's username
+                                    partnerUsername = generateUsername();
+                                    partnerName.textContent = partnerUsername;
+                                    addSystemMessage(`You are now chatting with ${partnerUsername}`);
+                                } else if (data.type === 'typing') {
+                                    // Simulate typing indicator
+                                    if (data.isTyping && Math.random() > 0.7) {
+                                        typingIndicator.textContent = `${partnerUsername} is typing...`;
+                                        setTimeout(() => {
+                                            typingIndicator.textContent = '';
+                                        }, 2000);
+                                    }
+                                }
+                            } else {
+                                // Simulate response after a delay
+                                if (Math.random() > 0.3) {
+                                    setTimeout(() => {
+                                        addMessage(`This is a simulated response to: "${data}"`, 'received');
+                                    }, 1000 + Math.random() * 3000);
+                                }
+                            }
+                        }, 100);
+                    },
+                    close: () => {
+                        console.log('Connection closed');
+                    },
+                    on: (event, callback) => {
+                        if (event === 'open') {
+                            callback();
+                        }
+                    }
+                };
+                
+                showChatInterface();
+                
+                // Send my username
+                sendMetadata({ type: 'username', username: myUsername });
+                
+                connectionStatus.textContent = 'Connected';
+                statusIndicator.classList.add('connected');
+                messageInput.disabled = false;
+                sendBtn.disabled = false;
+                messageInput.focus();
+                
+                hideElement(waitingMessage);
+            }, 3000 + Math.random() * 5000);
+        }
+        
+        // Initialize the application
+        function init() {
+            initializePeer();
+            
+            // Event: Chat with stranger
+            chatStrangerBtn.addEventListener('click', () => {
+                waitingForStranger = true;
+                findStrangerChat();
+            });
+            
+            // Event: Chat with friend (create a room)
+            chatFriendBtn.addEventListener('click', () => {
+                const code = generateFriendCode();
+                friendCode.textContent = code;
+                showElement(friendCodeContainer);
+                hideElement(joinCodeContainer);
+                showElement(waitingMessage);
+                
+                // Wait for someone to connect with this code
+                waitForConnection(code);
+            });
+            
+            // Event: Join with code
+            joinFriendBtn.addEventListener('click', () => {
+                showElement(joinCodeContainer);
+                hideElement(friendCodeContainer);
+            });
+            
+            // Event: Copy friend code
+            copyCodeBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(friendCode.textContent)
+                    .then(() => {
+                        const originalText = copyCodeBtn.textContent;
+                        copyCodeBtn.textContent = 'Copied!';
+                        setTimeout(() => {
+                            copyCodeBtn.textContent = originalText;
+                        }, 2000);
+                    })
+                    .catch(err => {
+                        console.error('Failed to copy text: ', err);
+                    });
+            });
+            
+            // Event: Connect using friend code
+            connectBtn.addEventListener('click', () => {
+                const code = codeInput.value.trim();
+                if (code.length !== 16) {
+                    showNotification('Please enter a valid 16-character code');
+                    return;
+                }
+                
+                addSystemMessage('Connecting to your friend...');
+                showChatInterface();
+                
+                // Simulate connection using the code
+                simulateFriendConnection(code);
+            });
+            
+            // Event: Send message
+            sendBtn.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            // Event: Handle typing indicator
+            messageInput.addEventListener('input', handleTyping);
+            
+            // Event: End chat
+            endChatBtn.addEventListener('click', () => {
+                addSystemMessage('You ended the chat.');
+                resetChat();
+            });
+            
+            // Prevent accidental navigation
+            window.addEventListener('beforeunload', (e) => {
+                if (connection) {
+                    e.preventDefault();
+                    e.returnValue = '';
+                    return '';
+                }
+            });
+        }
+        
+        // Send a message
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+            
+            addMessage(message, 'sent');
+            
+            if (connection && connection.open) {
+                connection.send(message);
+            }
+            
+            messageInput.value = '';
+            messageInput.focus();
+            
+            // Reset typing indicator
+            if (isTyping) {
+                isTyping = false;
+                sendMetadata({ type: 'typing', isTyping: false });
             }
         }
         
-        // === Event Listeners ===
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', init);
         
-        // Random Chat Button
-        strangerChatBtn.addEventListener('click', () => {
-            randomChatModal.style.display = 'flex';
-            
-            // Reset UI
-            while (randomChatMessages.firstChild) {
-                randomChatMessages.removeChild(randomChatMessages.firstChild);
-            }
-            
-            addMessage(randomChatMessages, 'Looking for a chat partner...');
-            searchingAnimation.style.display = 'flex';
-            randomChatMessages.appendChild(searchingAnimation);
-            
-            // Send request to server to find peer
-            signalingSocket.send(JSON.stringify({
-                type: 'find_peer',
-                username: currentUsername,
-                useEncryption: encryptionToggle.checked,
-                useTor: torToggle.checked
-            }));
+        // Handle offline/online status
+        window.addEventListener('online', () => {
+            showNotification('You are back online');
         });
         
-        // Create Room Button
-        createRoomBtn.addEventListener('click', () => {
-            privateRoomModal.style.display = 'flex';
-            
-            // Reset UI
-            while (privateChatMessages.firstChild) {
-                privateChatMessages.removeChild(privateChatMessages.firstChild);
-            }
-            
-            // Generate a connection code
-            const connectionCode = generateConnectionCode();
-            
-            // Send room creation request
-            signalingSocket.send(JSON.stringify({
-                type: 'create_room',
-                username: currentUsername,
-                connectionCode: connectionCode,
-                useEncryption: encryptionToggle.checked,
-                useTor: torToggle.checked
-            }));
-            
-            addMessage(privateChatMessages, 'Private P2P room ready! Share the connection code to chat.');
+        window.addEventListener('offline', () => {
+            showNotification('You are offline. Connection may be limited.');
         });
         
-        // Join Room Button
-        joinRoomBtn.addEventListener('click', () => {
-            const roomCode = document.getElementById('roomCodeInput').value.trim();
-            if (!roomCode) return;
-            
-            joinRoomModal.style.display = 'flex';
-            
-            // Reset UI
-            while (joinChatMessages.firstChild) {
-                joinChatMessages.removeChild(joinChatMessages.firstChild);
-            }
-            
-            addMessage(joinChatMessages, `Connecting to room ${roomCode}...`);
-            joiningAnimation.style.display = 'flex';
-            joinChatMessages.appendChild(joiningAnimation);
-            
-            // Send join request
-            signalingSocket.send(JSON.stringify({
-                type: 'join_room',
-                username: currentUsername,
-                connectionCode: roomCode,
-                useEncryption: encryptionToggle.checked,
-                useTor: torToggle.checked
-            }));
-        });
-        
-        // Close buttons
-        closeRandomChat.addEventListener('click', () => {
-            randomChatModal.style.display = 'none';
-            
-            if (isConnectedToStranger) {
-                // Send disconnect message to peer
-                if (dataChannel && dataChannel.readyState === 'open') {
-                    try {
-                        const disconnectMsg = {
-                            type: 'system',
-                            text: 'The other party has disconnected.'
-                        };
-                        
-                        if (encryptionToggle.checked) {
-                            const iv = generateIV();
-                            disconnectMsg.text = encryptMessage(disconnectMsg.text, encryptionKey, iv);
-                            disconnectMsg.iv = iv;
-                        }
-                        
-                        dataChannel.send(JSON.stringify(disconnectMsg));
-                    } catch (err) {
-                        console.error('Error sending disconnect message:', err);
-                    }
+        // Auto-reconnect when page regains focus
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && peer && !connection) {
+                console.log("Page is visible again, checking peer status...");
+                if (peer.disconnected) {
+                    console.log("Reconnecting peer...");
+                    peer.reconnect();
                 }
-                
-                // Close connections
-                if (dataChannel) {
-                    dataChannel.close();
-                    dataChannel = null;
-                }
-                
-                if (peerConnection) {
-                    peerConnection.close();
-                    peerConnection = null;
-                }
-                
-                isConnectedToStranger = false;
-            } else {
-                // If still searching, cancel search
-                signalingSocket.send(JSON.stringify({
-                    type: 'cancel_search',
-                    username: currentUsername
-                }));
             }
         });
-        
-        closePrivateRoom.addEventListener('click', () => {
-            privateRoomModal.style.display = 'none';
-            
-            if (isConnectedToPrivateRoom) {
-                // Send disconnect message to peer
-                if (dataChannel && dataChannel.readyState === 'open') {
-                    try {
-                        const disconnectMsg = {
-                            type: 'system',
-                            text: 'The room host has disconnected.'
-                        };
-                        
-                        if (encryptionToggle.checked) {
-                            const iv = generateIV();
-                            disconnectMsg.text = encryptMessage(disconnectMsg.text, encryptionKey, iv);
-                            disconnectMsg.iv = iv;
-                        }
-                        
-                        dataChannel.send(JSON.stringify(disconnectMsg));
-                    } catch (err) {
-                        console.error('Error sending disconnect message:', err);
-                    }
-                }
-                
-                // Close room on server
-                signalingSocket.send(JSON.stringify({
-                    type: 'close_room',
-                    roomId: currentRoomId
-                }));
-                
-                // Close connections
-                if (dataChannel) {
-                    dataChannel.close();
-                    dataChannel = null;
-                }
-                
-                if (peerConnection) {
-                    peerConnection.close();
-                    peerConnection = null;
-                }
-                
-                isConnectedToPrivateRoom = false;
-                currentRoomId = '';
-            }
-        });
-        
-        closeJoinRoom.addEventListener('click', () => {
-            joinRoomModal.style.display = 'none';
-            
-            if (isConnectedToPrivateRoom || isJoiningRoom) {
-                // Send disconnect message to peer
-                if (dataChannel && dataChannel.readyState === 'open') {
-                    try {
-                        const disconnectMsg = {
-                            type: 'system',
-                            text: 'The other participant has disconnected.'
-                        };
-                        
-                        if (encryptionToggle.checked) {
-                            const iv = generateIV();
-                            disconnectMsg.text = encryptMessage(disconnectMsg.text, encryptionKey, iv);
-                            disconnectMsg.iv = iv;
-                        }
-                        
-                        dataChannel.send(JSON.stringify(disconnectMsg));
-                    } catch (err) {
-                        console.error('Error sending disconnect message:', err);
-                    }
-                }
-                
-                // Leave room on server
-                signalingSocket.send(JSON.stringify({
-                    type: 'leave_room',
-                    roomId: currentRoomId,
-                    username: currentUsername
-                }));
-                
-                // Close connections
-                if (dataChannel) {
-                    dataChannel.close();
-                    dataChannel = null;
-                }
-                
-                if (peerConnection) {
-                    peerConnection.close();
-                    peerConnection = null;
-                }
-                
-                isConnectedToPrivateRoom = false;
-                isJoiningRoom = false;
-                currentRoomId = '';
-            }
-        });
-        
-        // Send buttons
-        randomSendBtn.addEventListener('click', () => {
-            sendMessage('random');
-        });
-        
-        privateSendBtn.addEventListener('click', () => {
-            sendMessage('private');
-        });
-        
-        joinSendBtn.addEventListener('click', () => {
-            sendMessage('join');
-        });
-        
-        // Send message on Enter key
-        randomChatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendMessage('random');
-                e.preventDefault();
-            }
-        });
-        
-        privateChatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendMessage('private');
-                e.preventDefault();
-            }
-        });
-        
-        joinChatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendMessage('join');
-                e.preventDefault();
-            }
-        });
-        
-        // Copy room code button
-        copyRoomCode.addEventListener('click', () => {
-            navigator.clipboard.writeText(generatedRoomCode.textContent)
-                .then(() => {
-                    copyRoomCode.innerHTML = `
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M20 6L9 17l-5-5"/>
-                        </svg>
-                    `;
-                    
-                    setTimeout(() => {
-                        copyRoomCode.innerHTML = `
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                            </svg>
-                        `;
-                    }, 2000);
-                })
-                .catch(err => {
-                    console.error('Could not copy text: ', err);
-                });
-        });
-        
-        // Initialize app by connecting to signaling server
-        connectToSignalingServer();
     </script>
 </body>
 </html>
